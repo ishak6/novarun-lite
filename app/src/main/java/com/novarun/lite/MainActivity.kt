@@ -23,12 +23,21 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.OutputTransformation
+import androidx.compose.foundation.text.input.TextFieldBuffer
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
@@ -63,17 +72,17 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.OffsetMapping
-import androidx.compose.ui.text.input.TransformedText
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.novarun.lite.projects.ProjectStore
 import com.novarun.lite.projects.ProjectSummary
@@ -625,8 +634,13 @@ private fun CodeEditorScreen(
     val store = remember(project.directory.absolutePath) { ProjectFileStore(project.directory) }
     val initialContent = remember(relativePath) { runCatching { store.readText(relativePath) } }
     val loadError = initialContent.exceptionOrNull()?.message
+    val editorState = remember(relativePath) { TextFieldState(initialContent.getOrDefault("")) }
+    val editorScrollState = rememberScrollState()
     var content by remember(relativePath) { mutableStateOf(initialContent.getOrDefault("")) }
     var savedContent by remember(relativePath) { mutableStateOf(content) }
+    LaunchedEffect(editorState) {
+        snapshotFlow { editorState.text.toString() }.collect { content = it }
+    }
     val context = LocalContext.current
     val settings = remember(context) { AppSettingsStore(context.applicationContext) }
     val scope = rememberCoroutineScope()
@@ -638,18 +652,20 @@ private fun CodeEditorScreen(
     var showDiscardDialog by remember { mutableStateOf(false) }
     val extension = relativePath.substringAfterLast('.', "").lowercase()
     val lineCount = content.count { it == '\n' } + 1
-    val syntax = remember(extension) { CodeSyntaxTransformation(extension) }
+    val syntax = remember(extension) { CodeSyntaxOutputTransformation(extension) }
 
     BackHandler(enabled = content != savedContent) {
         showDiscardDialog = true
     }
 
     suspend fun saveNow(): Boolean {
+        val currentText = editorState.text.toString()
         val result = withContext(Dispatchers.IO) {
-            runCatching { store.writeTextAtomic(relativePath, content) }
+            runCatching { store.writeTextAtomic(relativePath, currentText) }
         }
         result.onSuccess {
-            savedContent = content
+            content = currentText
+            savedContent = currentText
             saveMessage = "Saved"
         }.onFailure {
             saveMessage = it.message ?: "Save failed"
@@ -697,26 +713,49 @@ private fun CodeEditorScreen(
             Text(saveMessage, color = MaterialTheme.colorScheme.primary)
         }
         Row(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                (1..lineCount).joinToString("\n"),
-                modifier = Modifier.padding(top = 16.dp),
-                style = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+            Column(
+                modifier = Modifier.width(30.dp)
+                    .verticalScroll(editorScrollState)
+                    .padding(top = 10.dp)
+            ) {
+                Text(
+                    (1..lineCount).joinToString("\n"),
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 20.sp,
+                        textAlign = TextAlign.End,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                    )
                 )
-            )
-            OutlinedTextField(
-                value = content,
-                onValueChange = { content = it },
-                enabled = loadError == null,
-                modifier = Modifier.weight(1f).fillMaxSize(),
-                textStyle = TextStyle(fontFamily = FontFamily.Monospace),
-                visualTransformation = syntax,
-                placeholder = { Text("Start writing code…") }
-            )
+            }
+            Box(
+                modifier = Modifier.weight(1f).fillMaxHeight()
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+                    .padding(8.dp)
+            ) {
+                if (content.isEmpty()) {
+                    Text("Start writing code…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                BasicTextField(
+                    state = editorState,
+                    enabled = loadError == null,
+                    modifier = Modifier.fillMaxSize(),
+                    textStyle = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    lineLimits = TextFieldLineLimits.MultiLine(),
+                    outputTransformation = syntax,
+                    scrollState = editorScrollState,
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                )
+            }
         }
     }
 
@@ -779,19 +818,19 @@ private fun CodeEditorScreen(
     }
 }
 
-private class CodeSyntaxTransformation(private val extension: String) : VisualTransformation {
-    override fun filter(text: AnnotatedString): TransformedText {
-        val builder = AnnotatedString.Builder(text)
+private class CodeSyntaxOutputTransformation(private val extension: String) : OutputTransformation {
+    override fun TextFieldBuffer.transformOutput() {
+        val source = asCharSequence()
         val commentPattern = if (extension == "py") {
             Regex("#[^\\n]*")
         } else {
             Regex("//[^\\n]*|/\\*[\\s\\S]*?\\*/")
         }
-        commentPattern.findAll(text).forEach {
-            builder.addStyle(SpanStyle(color = Color(0xFF70A982)), it.range.first, it.range.last + 1)
+        commentPattern.findAll(source).forEach {
+            addStyle(SpanStyle(color = Color(0xFF70A982)), it.range.first, it.range.last + 1)
         }
-        Regex("\"[^\"]*\"|'[^']*'").findAll(text).forEach {
-            builder.addStyle(SpanStyle(color = Color(0xFFE3A66B)), it.range.first, it.range.last + 1)
+        Regex("\"[^\"]*\"|'[^']*'").findAll(source).forEach {
+            addStyle(SpanStyle(color = Color(0xFFE3A66B)), it.range.first, it.range.last + 1)
         }
         val keywords = when (extension) {
             "py" -> "def|class|return|if|elif|else|for|while|import|from|as|try|except|with|True|False|None|async|await"
@@ -799,18 +838,16 @@ private class CodeSyntaxTransformation(private val extension: String) : VisualTr
             "css" -> "important|media|keyframes|font-face"
             else -> "const|let|var|function|return|if|else|class|new|import|export|from|async|await|true|false|null|undefined"
         }
-        Regex("\\b($keywords)\\b").findAll(text).forEach {
-            builder.addStyle(SpanStyle(color = Color(0xFF8E9FFF)), it.range.first, it.range.last + 1)
+        Regex("\\b($keywords)\\b").findAll(source).forEach {
+            addStyle(SpanStyle(color = Color(0xFF8E9FFF)), it.range.first, it.range.last + 1)
         }
         if (extension == "html" || extension == "htm") {
-            Regex("</?[A-Za-z][^>]*>").findAll(text).forEach {
-                builder.addStyle(SpanStyle(color = Color(0xFF69B7D6)), it.range.first, it.range.last + 1)
+            Regex("</?[A-Za-z][^>]*>").findAll(source).forEach {
+                addStyle(SpanStyle(color = Color(0xFF69B7D6)), it.range.first, it.range.last + 1)
             }
         }
-        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
 }
-
 
 
 private fun generateAccessToken(): String {
