@@ -135,7 +135,7 @@ class LocalHttpServer(
     private fun validateRequestPath(path: String): String {
         require(path.startsWith("/") && !path.startsWith("//"))
         require(!path.contains('\\') && !path.contains('\u0000'))
-        val decoded = path.removePrefix("/")
+        val decoded = path.removePrefix("/").removeSuffix("/")
         if (decoded.isEmpty()) return ""
         val parts = decoded.split('/')
         require(parts.none { it.isBlank() || it == "." || it == ".." })
