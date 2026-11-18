@@ -80,6 +80,7 @@ import com.novarun.lite.database.ProjectDatabaseStore
 import com.novarun.lite.database.SqlQueryResult
 import com.novarun.lite.server.LocalServerService
 import com.novarun.lite.server.findLanIpv4Address
+import com.novarun.lite.security.SecureTokenStore
 import kotlinx.coroutines.delay
 import java.security.SecureRandom
 import java.util.Base64
@@ -741,7 +742,8 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
     var starting by remember { mutableStateOf(false) }
     var lanEnabled by remember { mutableStateOf(false) }
     var lanAddress by remember { mutableStateOf(findLanIpv4Address()) }
-    var accessToken by remember { mutableStateOf("") }
+    val tokenStore = remember(context) { SecureTokenStore(context.applicationContext) }
+    var accessToken by remember { mutableStateOf(tokenStore.load().orEmpty()) }
     val logs = remember { mutableStateListOf<String>() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
@@ -760,6 +762,12 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
                     LocalServerService.ACTION_STATE -> {
                         running = intent.getBooleanExtra(LocalServerService.EXTRA_RUNNING, false)
                         starting = false
+                        if (running) {
+                            accessToken = tokenStore.load().orEmpty()
+                        } else {
+                            accessToken = ""
+                            tokenStore.clear()
+                        }
                     }
                 }
             }
@@ -787,12 +795,14 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
         }
         val token = if (lanEnabled) generateAccessToken() else null
         accessToken = token.orEmpty()
+        if (token == null) tokenStore.clear() else tokenStore.save(token)
         starting = true
         runCatching {
             controller.start(selectedProject!!, port, bindAddress, token)
         }.onFailure {
             starting = false
             accessToken = ""
+            tokenStore.clear()
             addLog(it.message ?: "Could not start server")
         }
     }
@@ -859,6 +869,7 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
                     running = false
                     starting = false
                     accessToken = ""
+                    tokenStore.clear()
                 }
             ) { Text("Stop") }
         }
