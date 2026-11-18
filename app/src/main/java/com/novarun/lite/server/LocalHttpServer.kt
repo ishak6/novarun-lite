@@ -18,6 +18,7 @@ class LocalHttpServer(
     private val authToken: String? = null
 ) {
     @Volatile private var serverSocket: ServerSocket? = null
+    @Volatile private var activeClient: Socket? = null
     @Volatile private var worker: Thread? = null
 
     @Synchronized
@@ -32,11 +33,16 @@ class LocalHttpServer(
 
     @Synchronized
     fun stop() {
+        val currentWorker = worker
+        runCatching { activeClient?.close() }
         runCatching { serverSocket?.close() }
+        currentWorker?.interrupt()
+        if (currentWorker != null && currentWorker !== Thread.currentThread()) {
+            runCatching { currentWorker.join(2_000) }
+        }
+        activeClient = null
         serverSocket = null
-        worker?.interrupt()
         worker = null
-        onState(false)
         onLog("Server stopped")
     }
 
@@ -50,9 +56,14 @@ class LocalHttpServer(
                 onLog("Listening on $bindAddress:$port")
                 while (!socket.isClosed && !Thread.currentThread().isInterrupted) {
                     val client = socket.accept()
-                    client.use { connection ->
-                        connection.soTimeout = 5_000
-                        handleClient(connection, store)
+                    activeClient = client
+                    try {
+                        client.use { connection ->
+                            connection.soTimeout = 5_000
+                            handleClient(connection, store)
+                        }
+                    } finally {
+                        activeClient = null
                     }
                 }
             }
