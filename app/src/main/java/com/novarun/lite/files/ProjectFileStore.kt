@@ -147,7 +147,7 @@ class ProjectFileStore(projectDirectory: File) {
         val needle = query.trim()
         if (needle.isEmpty()) return emptyList()
         return root.walkTopDown()
-            .filter { it != root && it.name != ".novarun-project" }
+            .filter { it != root && it.name != ".novarun-project" && it.name != "novarun.sqlite" }
             .filter { !Files.isSymbolicLink(it.toPath()) && it.name.contains(needle, ignoreCase = true) }
             .map { file ->
                 ProjectFileEntry(
