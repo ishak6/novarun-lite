@@ -2,6 +2,7 @@ package com.novarun.lite
 
 import android.content.Context
 import androidx.core.content.ContextCompat
+import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.novarun.lite.database.ProjectDatabaseStore
@@ -113,8 +114,11 @@ class RuntimeStorageInstrumentedTest {
             .putExtra(LocalServerService.EXTRA_PORT, port)
             .putExtra(LocalServerService.EXTRA_BIND_ADDRESS, "127.0.0.1")
 
+        val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
-            ContextCompat.startForegroundService(context, startIntent)
+            scenario.onActivity { activity ->
+                ContextCompat.startForegroundService(activity, startIntent)
+            }
             val startDeadline = System.currentTimeMillis() + 8_000
             while (!LocalServerService.isRunning && System.currentTimeMillis() < startDeadline) {
                 Thread.sleep(50)
@@ -135,6 +139,7 @@ class RuntimeStorageInstrumentedTest {
                 android.content.Intent(context, LocalServerService::class.java)
                     .setAction(LocalServerService.ACTION_STOP)
             )
+            scenario.close()
             root.deleteRecursively()
         }
     }
