@@ -1,7 +1,12 @@
 package com.novarun.lite
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -65,7 +70,10 @@ import com.novarun.lite.projects.ProjectSummary
 import com.novarun.lite.files.ProjectFileEntry
 import com.novarun.lite.files.ProjectFileStore
 import com.novarun.lite.server.LocalHttpServer
+import com.novarun.lite.server.findLanIpv4Address
 import kotlinx.coroutines.delay
+import java.security.SecureRandom
+import java.util.Base64
 
 private val Navy = Color(0xFF101827)
 private val Blue = Color(0xFF4F8CFF)
@@ -681,21 +689,36 @@ private class CodeSyntaxTransformation(private val extension: String) : VisualTr
 
 
 
+private fun generateAccessToken(): String {
+    val bytes = ByteArray(32)
+    SecureRandom().nextBytes(bytes)
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+}
+
 private class LocalServerController {
     private var server: LocalHttpServer? = null
 
     fun start(
         project: ProjectSummary,
         port: Int,
+        bindAddress: String,
+        authToken: String?,
         onLog: (String) -> Unit,
         onState: (Boolean) -> Unit
     ) {
         check(server == null) { "Server is already active" }
         var created: LocalHttpServer? = null
-        val instance = LocalHttpServer(project.directory, port, onLog) { isRunning ->
-            if (!isRunning && server === created) server = null
-            onState(isRunning)
-        }
+        val instance = LocalHttpServer(
+            project.directory,
+            port,
+            onLog,
+            { isRunning ->
+                if (!isRunning && server === created) server = null
+                onState(isRunning)
+            },
+            bindAddress,
+            authToken
+        )
         created = instance
         server = instance
         instance.start()
@@ -716,11 +739,17 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
     var portText by remember { mutableStateOf("8080") }
     var running by remember { mutableStateOf(false) }
     var starting by remember { mutableStateOf(false) }
+    var lanEnabled by remember { mutableStateOf(false) }
+    var lanAddress by remember { mutableStateOf(findLanIpv4Address()) }
+    var accessToken by remember { mutableStateOf("") }
     val logs = remember { mutableStateListOf<String>() }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     fun addLog(value: String) {
-        logs.add(0, value)
-        while (logs.size > 30) logs.removeAt(logs.lastIndex)
+        mainHandler.post {
+            logs.add(0, value)
+            while (logs.size > 30) logs.removeAt(logs.lastIndex)
+        }
     }
 
     Column(
@@ -741,6 +770,18 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
                 }
             }
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("LAN / Wi-Fi / Hotspot")
+            Switch(
+                checked = lanEnabled,
+                onCheckedChange = { lanEnabled = it; accessToken = "" },
+                enabled = !running && !starting
+            )
+            TextButton(onClick = { lanAddress = findLanIpv4Address() }, enabled = !running) {
+                Text("Detect IP")
+            }
+        }
+        Text("Detected private IP: ${lanAddress ?: "not available"}")
         OutlinedTextField(
             value = portText,
             onValueChange = { if (it.length <= 5 && it.all(Char::isDigit)) portText = it },
@@ -755,19 +796,31 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
                     if (port == null || port !in 1024..65535) {
                         addLog("Choose a port between 1024 and 65535")
                     } else {
-                        starting = true
-                        runCatching {
-                            controller.start(
-                                selectedProject!!,
-                                port,
-                                ::addLog
-                            ) {
-                                running = it
+                        val bindAddress = if (lanEnabled) lanAddress else "127.0.0.1"
+                        if (bindAddress == null) {
+                            addLog("No private LAN IPv4 address found. Connect to Wi-Fi or start a hotspot.")
+                        } else {
+                            starting = true
+                            val token = if (lanEnabled) generateAccessToken() else null
+                            accessToken = token.orEmpty()
+                            runCatching {
+                                controller.start(
+                                    selectedProject!!,
+                                    port,
+                                    bindAddress,
+                                    token,
+                                    ::addLog
+                                ) { isRunning ->
+                                    mainHandler.post {
+                                        running = isRunning
+                                        starting = false
+                                    }
+                                }
+                            }.onFailure {
                                 starting = false
+                                accessToken = ""
+                                addLog(it.message ?: "Could not start server")
                             }
-                        }.onFailure {
-                            starting = false
-                            addLog(it.message ?: "Could not start server")
                         }
                     }
                 }
@@ -778,17 +831,33 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
                     controller.stop()
                     running = false
                     starting = false
+                    accessToken = ""
                 }
             ) { Text("Stop") }
         }
         Text(if (running) "Status: Running" else "Status: Stopped")
-        if (running) Text("Local URL: http://127.0.0.1:$portText")
-        Text(
-            "M5 localhost only. LAN/Wi-Fi/Hotspot access is implemented separately in M6.",
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-        )
+        if (running && !lanEnabled) {
+            Text("Local URL: http://127.0.0.1:$portText")
+        }
+        if (running && lanEnabled) {
+            Text("LAN URL: http://${lanAddress ?: "unknown"}:$portText")
+            Text("Access token: $accessToken")
+            OutlinedButton(onClick = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("NovaRun access token", accessToken))
+                addLog("Access token copied")
+            }) { Text("Copy access token") }
+            Text(
+                "Security warning: LAN traffic uses HTTP, not TLS. The token and project data are not encrypted in transit. Use only on a trusted private Wi-Fi or hotspot network.",
+                color = MaterialTheme.colorScheme.error
+            )
+        }
         Text("Server Logs", style = MaterialTheme.typography.titleMedium)
-        logs.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            items(logs.toList()) { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall)
+            }
+        }
     }
 }
 
