@@ -992,8 +992,14 @@ private fun ProjectPreviewWebView(
                     if (request.isForMainFrame) onError(error.description?.toString() ?: "Preview load failed")
                 }
 
-                override fun onPageFinished(view: WebView, url: String) {
-                    onError(null)
+                override fun onReceivedHttpError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    errorResponse: WebResourceResponse
+                ) {
+                    if (request.isForMainFrame) {
+                        onError("Preview returned HTTP ${errorResponse.statusCode}")
+                    }
                 }
             }
         }
