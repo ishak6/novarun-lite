@@ -55,7 +55,9 @@ class ProjectFileStore(projectDirectory: File) {
         validateName(newName)
         val source = resolve(relativePath)
         require(source.exists()) { "Source does not exist" }
-        val destination = resolve(join(source.parentFile!!.relativeTo(root).invariantSeparatorsPath, newName))
+        val parent = source.parentFile ?: error("Missing parent directory")
+        val parentRelative = if (parent.canonicalFile == root) "" else parent.relativeTo(root).invariantSeparatorsPath
+        val destination = resolve(join(parentRelative, newName))
         require(!destination.exists()) { "A file with that name already exists" }
         check(source.renameTo(destination)) { "Rename failed" }
         return destination.relativeTo(root).invariantSeparatorsPath
