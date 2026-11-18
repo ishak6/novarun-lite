@@ -211,7 +211,7 @@ private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit, onServer: 
             Button(onClick = onProjects, modifier = Modifier.weight(1f)) { Text("Projects") }
             OutlinedButton(onClick = onProjects, modifier = Modifier.weight(1f)) { Text("Import ZIP") }
             Button(onClick = onPreview, modifier = Modifier.weight(1f)) { Text("Preview") }
-            OutlinedButton(onClick = onServer, modifier = Modifier.weight(1f)) { Text("Server") }
+            OutlinedButton(onClick = onServer, modifier = Modifier.weight(1f)) { Text("Start Server") }
         }
     }
 }
