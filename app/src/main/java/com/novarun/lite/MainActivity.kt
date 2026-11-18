@@ -61,6 +61,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -85,7 +86,10 @@ import com.novarun.lite.server.findLanIpv4Address
 import com.novarun.lite.security.SecureTokenStore
 import com.novarun.lite.settings.AppSettingsStore
 import com.novarun.lite.settings.ThemeMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.security.SecureRandom
 import java.util.Base64
 
@@ -224,6 +228,7 @@ private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit, onServer: 
 private fun ProjectManagerScreen() {
     val context = LocalContext.current
     val store = remember { ProjectStore(context.applicationContext) }
+    val scope = rememberCoroutineScope()
     var projects by remember { mutableStateOf(store.listProjects()) }
     var projectName by remember { mutableStateOf("") }
     var renameTarget by remember { mutableStateOf<ProjectSummary?>(null) }
@@ -241,16 +246,21 @@ private fun ProjectManagerScreen() {
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            runCatching {
-                val name = uri.lastPathSegment?.substringAfterLast(':') ?: "Imported Project.zip"
-                val input = context.contentResolver.openInputStream(uri)
-                    ?: error("Could not open selected ZIP file")
-                input.use { store.importZip(it, name) }
-            }.onSuccess {
-                message = "Imported ${it.name}"
-                refresh()
-            }.onFailure {
-                message = it.message ?: "ZIP import failed"
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val name = uri.lastPathSegment?.substringAfterLast(':') ?: "Imported Project.zip"
+                        val input = context.contentResolver.openInputStream(uri)
+                            ?: error("Could not open selected ZIP file")
+                        input.use { store.importZip(it, name) }
+                    }
+                }
+                result.onSuccess {
+                    message = "Imported ${it.name}"
+                    refresh()
+                }.onFailure {
+                    message = it.message ?: "ZIP import failed"
+                }
             }
         }
     }
@@ -260,14 +270,19 @@ private fun ProjectManagerScreen() {
     ) { uri: Uri? ->
         val target = exportTarget
         if (uri != null && target != null) {
-            runCatching {
-                val output = context.contentResolver.openOutputStream(uri)
-                    ?: error("Could not create backup file")
-                output.use { store.exportZip(target.directory, it) }
-            }.onSuccess {
-                message = "Backup saved"
-            }.onFailure {
-                message = it.message ?: "Backup failed"
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val output = context.contentResolver.openOutputStream(uri)
+                            ?: error("Could not create backup file")
+                        output.use { store.exportZip(target.directory, it) }
+                    }
+                }
+                result.onSuccess {
+                    message = "Backup saved"
+                }.onFailure {
+                    message = it.message ?: "Backup failed"
+                }
             }
         }
         exportTarget = null
