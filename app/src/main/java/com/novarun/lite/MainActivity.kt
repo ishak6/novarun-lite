@@ -116,6 +116,7 @@ private enum class MainTab(val label: String, val symbol: String) {
 private fun NovaRunApp() {
     var selectedTab by remember { mutableStateOf(0) }
     var previewFullscreen by remember { mutableStateOf(false) }
+    var requestZipImport by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val settingsStore = remember(context) { AppSettingsStore(context.applicationContext) }
     var themeMode by remember { mutableStateOf(settingsStore.themeMode()) }
@@ -158,10 +159,14 @@ private fun NovaRunApp() {
                 when (tabs[selectedTab]) {
                     MainTab.HOME -> HomeScreen(
                         onProjects = { selectedTab = 1 },
+                        onImport = { requestZipImport = true; selectedTab = 1 },
                         onPreview = { selectedTab = 2 },
                         onServer = { selectedTab = 3 }
                     )
-                    MainTab.PROJECTS -> ProjectManagerScreen()
+                    MainTab.PROJECTS -> ProjectManagerScreen(
+                        openImport = requestZipImport,
+                        onImportOpened = { requestZipImport = false }
+                    )
                     MainTab.PREVIEW -> ProjectPreviewScreen(
                         fullscreen = previewFullscreen,
                         onFullscreenChange = { previewFullscreen = it }
@@ -182,7 +187,12 @@ private fun NovaRunApp() {
 }
 
 @Composable
-private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit, onServer: () -> Unit) {
+private fun HomeScreen(
+    onProjects: () -> Unit,
+    onImport: () -> Unit,
+    onPreview: () -> Unit,
+    onServer: () -> Unit
+) {
     val context = LocalContext.current
     val projectStore = remember(context) { ProjectStore(context.applicationContext) }
     var projects by remember { mutableStateOf(emptyList<ProjectSummary>()) }
@@ -218,7 +228,7 @@ private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit, onServer: 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onProjects, modifier = Modifier.weight(1f)) { Text("Projects") }
-                OutlinedButton(onClick = onProjects, modifier = Modifier.weight(1f)) { Text("Import ZIP") }
+                OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f)) { Text("Import ZIP") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onPreview, modifier = Modifier.weight(1f)) { Text("Preview") }
@@ -229,7 +239,7 @@ private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit, onServer: 
 }
 
 @Composable
-private fun ProjectManagerScreen() {
+private fun ProjectManagerScreen(openImport: Boolean, onImportOpened: () -> Unit) {
     val context = LocalContext.current
     val store = remember { ProjectStore(context.applicationContext) }
     val scope = rememberCoroutineScope()
@@ -271,6 +281,13 @@ private fun ProjectManagerScreen() {
                     message = it.message ?: "ZIP import failed"
                 }
             }
+        }
+    }
+
+    LaunchedEffect(openImport) {
+        if (openImport) {
+            importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+            onImportOpened()
         }
     }
 
