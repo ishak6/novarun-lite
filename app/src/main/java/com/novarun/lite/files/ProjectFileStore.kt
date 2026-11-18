@@ -43,12 +43,14 @@ class ProjectFileStore(projectDirectory: File) {
         val file = resolve(relativePath)
         ensureParent(file)
         check(file.createNewFile()) { "File already exists or could not be created" }
+        touchRoot()
     }
 
     fun createFolder(relativePath: String) {
         val folder = resolve(relativePath)
         ensureParent(folder)
         check(folder.mkdir()) { "Folder already exists or could not be created" }
+        touchRoot()
     }
 
     fun rename(relativePath: String, newName: String): String {
@@ -60,6 +62,7 @@ class ProjectFileStore(projectDirectory: File) {
         val destination = resolve(join(parentRelative, newName))
         require(!destination.exists()) { "A file with that name already exists" }
         check(source.renameTo(destination)) { "Rename failed" }
+        touchRoot()
         return destination.relativeTo(root).invariantSeparatorsPath
     }
 
@@ -67,6 +70,7 @@ class ProjectFileStore(projectDirectory: File) {
         val target = resolve(relativePath)
         require(target.exists()) { "File does not exist" }
         check(target.deleteRecursively()) { "Delete failed" }
+        touchRoot()
     }
 
     fun copyFile(sourcePath: String, destinationPath: String) {
@@ -76,6 +80,7 @@ class ProjectFileStore(projectDirectory: File) {
         require(!destination.exists()) { "Destination already exists" }
         ensureParent(destination)
         source.copyTo(destination, overwrite = false)
+        touchRoot()
     }
 
     fun moveFile(sourcePath: String, destinationPath: String) {
@@ -85,6 +90,7 @@ class ProjectFileStore(projectDirectory: File) {
         require(!destination.exists()) { "Destination already exists" }
         ensureParent(destination)
         check(source.renameTo(destination)) { "Move failed" }
+        touchRoot()
     }
 
 
@@ -131,6 +137,7 @@ class ProjectFileStore(projectDirectory: File) {
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING
                 )
             }
+            touchRoot()
         } finally {
             if (temporary.exists()) temporary.delete()
         }
@@ -169,6 +176,10 @@ class ProjectFileStore(projectDirectory: File) {
             }
         }
         return candidate
+    }
+
+    private fun touchRoot() {
+        root.setLastModified(System.currentTimeMillis())
     }
 
     private fun ensureParent(file: File) {
