@@ -76,7 +76,7 @@ class RuntimeStorageInstrumentedTest {
                 store.execute("ATTACH DATABASE '/tmp/outside.db' AS external")
             }
             assertThrows(IllegalArgumentException::class.java) {
-                store.execute("-- external path\\nATTACH DATABASE '/tmp/outside.db' AS external")
+                store.execute("-- external path\nATTACH DATABASE '/tmp/outside.db' AS external")
             }
             assertEquals("ATTACH", store.execute("SELECT 'ATTACH'").rows.single().single())
         } finally {
