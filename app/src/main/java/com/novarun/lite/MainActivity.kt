@@ -155,6 +155,8 @@ private fun ProjectManagerScreen() {
     var renameTarget by remember { mutableStateOf<ProjectSummary?>(null) }
     var deleteTarget by remember { mutableStateOf<ProjectSummary?>(null) }
     var exportTarget by remember { mutableStateOf<ProjectSummary?>(null) }
+    var openedProject by remember { mutableStateOf<ProjectSummary?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
 
     fun refresh() { projects = store.listProjects() }
@@ -206,12 +208,31 @@ private fun ProjectManagerScreen() {
                 importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
             }) { Text("Import ZIP") }
         }
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Search projects") },
+            singleLine = true
+        )
         message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        openedProject?.let { selected ->
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Open project: ${selected.name}", style = MaterialTheme.typography.titleMedium)
+                    Text("Location: app-private project storage")
+                    Text("Files: ${selected.fileCount}")
+                }
+            }
+        }
         if (projects.isEmpty()) {
             Text("No projects yet. Create a project or import a ZIP archive.")
         } else {
+            val filteredProjects = projects.filter {
+                it.name.contains(searchQuery, ignoreCase = true)
+            }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(projects, key = { it.directory.absolutePath }) { project ->
+                items(filteredProjects, key = { it.directory.absolutePath }) { project ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -220,6 +241,7 @@ private fun ProjectManagerScreen() {
                             Text(project.name, style = MaterialTheme.typography.titleMedium)
                             Text("${project.fileCount} files")
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                TextButton(onClick = { openedProject = project }) { Text("Open") }
                                 TextButton(onClick = { renameTarget = project; projectName = project.name }) {
                                     Text("Rename")
                                 }
