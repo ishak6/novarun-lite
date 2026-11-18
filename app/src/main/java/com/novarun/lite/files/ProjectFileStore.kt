@@ -88,6 +88,12 @@ class ProjectFileStore(projectDirectory: File) {
     }
 
 
+    fun openInputStream(relativePath: String): java.io.InputStream {
+        val file = resolve(relativePath)
+        require(file.isFile) { "Selected path is not a file" }
+        return file.inputStream()
+    }
+
     fun readText(relativePath: String, maxBytes: Long = 2L * 1024L * 1024L): String {
         val file = resolve(relativePath)
         require(file.isFile) { "Selected path is not a file" }
