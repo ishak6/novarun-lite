@@ -13,7 +13,9 @@ class LocalHttpServer(
     private val projectDirectory: java.io.File,
     private val port: Int,
     private val onLog: (String) -> Unit,
-    private val onState: (Boolean) -> Unit
+    private val onState: (Boolean) -> Unit,
+    private val bindAddress: String = "127.0.0.1",
+    private val authToken: String? = null
 ) {
     @Volatile private var serverSocket: ServerSocket? = null
     @Volatile private var worker: Thread? = null
@@ -41,11 +43,11 @@ class LocalHttpServer(
     private fun runServer() {
         try {
             val store = ProjectFileStore(projectDirectory)
-            ServerSocket(port, 32, InetAddress.getByName("127.0.0.1")).use { socket ->
+            ServerSocket(port, 32, InetAddress.getByName(bindAddress)).use { socket ->
                 serverSocket = socket
                 socket.soTimeout = 0
                 onState(true)
-                onLog("Listening on http://127.0.0.1:$port")
+                onLog("Listening on $bindAddress:$port")
                 while (!socket.isClosed && !Thread.currentThread().isInterrupted) {
                     val client = socket.accept()
                     client.use { connection ->
@@ -84,6 +86,7 @@ class LocalHttpServer(
                 respond(output, 400, "Bad Request", "Invalid request target")
                 return
             }
+            val requestHeaders = HashMap<String, String>()
             var headerBytes = 0
             var headerCount = 0
             while (true) {
@@ -95,6 +98,17 @@ class LocalHttpServer(
                     return
                 }
                 if (header.isEmpty()) break
+                val separator = header.indexOf(':')
+                if (separator > 0) {
+                    requestHeaders[header.substring(0, separator).trim().lowercase()] =
+                        header.substring(separator + 1).trim()
+                }
+            }
+            if (authToken != null && requestHeaders["authorization"] != "Bearer $authToken") {
+                respond(output, 401, "Unauthorized", "A valid NovaRun access token is required",
+                    mapOf("WWW-Authenticate" to "Bearer"))
+                onLog("Rejected unauthenticated LAN request")
+                return
             }
 
             val encodedPath = target.substringBefore('?').substringBefore('#')
