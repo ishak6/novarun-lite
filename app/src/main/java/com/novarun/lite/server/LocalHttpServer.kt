@@ -32,7 +32,7 @@ class LocalHttpServer(
     }
 
     @Synchronized
-    fun stop() {
+    fun stop(): Boolean {
         val currentWorker = worker
         runCatching { activeClient?.close() }
         runCatching { serverSocket?.close() }
@@ -40,10 +40,14 @@ class LocalHttpServer(
         if (currentWorker != null && currentWorker !== Thread.currentThread()) {
             runCatching { currentWorker.join(2_000) }
         }
-        activeClient = null
-        serverSocket = null
-        worker = null
-        onLog("Server stopped")
+        val stopped = currentWorker?.isAlive != true
+        if (stopped) {
+            activeClient = null
+            serverSocket = null
+            worker = null
+        }
+        onLog(if (stopped) "Server stopped" else "Server shutdown is still in progress")
+        return stopped
     }
 
     private fun runServer() {
