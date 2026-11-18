@@ -28,23 +28,33 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.novarun.lite.projects.ProjectStore
 import com.novarun.lite.projects.ProjectSummary
 import com.novarun.lite.files.ProjectFileEntry
 import com.novarun.lite.files.ProjectFileStore
+import kotlinx.coroutines.delay
 
 private val Navy = Color(0xFF101827)
 private val Blue = Color(0xFF4F8CFF)
@@ -166,6 +176,7 @@ private fun ProjectManagerScreen() {
     var deleteTarget by remember { mutableStateOf<ProjectSummary?>(null) }
     var exportTarget by remember { mutableStateOf<ProjectSummary?>(null) }
     var openedProject by remember { mutableStateOf<ProjectSummary?>(null) }
+    var editorFile by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -208,10 +219,20 @@ private fun ProjectManagerScreen() {
     }
 
     if (openedProject != null) {
-        ProjectFilesScreen(
-            project = openedProject!!,
-            onBack = { openedProject = null }
-        )
+        val activeProject = openedProject!!
+        if (editorFile != null) {
+            CodeEditorScreen(
+                project = activeProject,
+                relativePath = editorFile!!,
+                onBack = { editorFile = null }
+            )
+        } else {
+            ProjectFilesScreen(
+                project = activeProject,
+                onBack = { openedProject = null },
+                onOpenFile = { editorFile = it }
+            )
+        }
         return
     }
 
@@ -332,7 +353,11 @@ private fun ProjectManagerScreen() {
 
 
 @Composable
-private fun ProjectFilesScreen(project: ProjectSummary, onBack: () -> Unit) {
+private fun ProjectFilesScreen(
+    project: ProjectSummary,
+    onBack: () -> Unit,
+    onOpenFile: (String) -> Unit
+) {
     val store = remember(project.directory.absolutePath) { ProjectFileStore(project.directory) }
     var currentDirectory by remember(project.directory.absolutePath) { mutableStateOf("") }
     var entries by remember(project.directory.absolutePath) { mutableStateOf(store.list()) }
@@ -398,7 +423,7 @@ private fun ProjectFilesScreen(project: ProjectSummary, onBack: () -> Unit) {
                                     Text("Open")
                                 }
                             } else {
-                                TextButton(onClick = { selectedFile = entry.relativePath }) { Text("Select") }
+                                TextButton(onClick = { selectedFile = entry.relativePath; onOpenFile(entry.relativePath) }) { Text("Open") }
                                 TextButton(onClick = {
                                     targetEntry = entry
                                     input = entry.name
@@ -483,6 +508,156 @@ private fun ProjectFilesScreen(project: ProjectSummary, onBack: () -> Unit) {
                 TextButton(onClick = { dialogMode = "none" }) { Text("Cancel") }
             }
         )
+    }
+}
+
+
+@Composable
+private fun CodeEditorScreen(
+    project: ProjectSummary,
+    relativePath: String,
+    onBack: () -> Unit
+) {
+    val store = remember(project.directory.absolutePath) { ProjectFileStore(project.directory) }
+    var content by remember(relativePath) {
+        mutableStateOf(runCatching { store.readText(relativePath) }.getOrDefault(""))
+    }
+    var savedContent by remember(relativePath) { mutableStateOf(content) }
+    var autoSave by remember { mutableStateOf(true) }
+    var saveMessage by remember { mutableStateOf("Loaded") }
+    var findText by remember { mutableStateOf("") }
+    var replaceText by remember { mutableStateOf("") }
+    var showFind by remember { mutableStateOf(false) }
+    val extension = relativePath.substringAfterLast('.', "").lowercase()
+    val lineCount = content.count { it == '\n' } + 1
+    val syntax = remember(extension) { CodeSyntaxTransformation(extension) }
+
+    fun saveNow() {
+        runCatching { store.writeTextAtomic(relativePath, content) }
+            .onSuccess {
+                savedContent = content
+                saveMessage = "Saved"
+            }
+            .onFailure {
+                saveMessage = it.message ?: "Save failed"
+            }
+    }
+
+    LaunchedEffect(content, autoSave, relativePath) {
+        if (autoSave && content != savedContent) {
+            delay(900)
+            runCatching { store.writeTextAtomic(relativePath, content) }
+                .onSuccess {
+                    savedContent = content
+                    saveMessage = "Auto-saved"
+                }
+                .onFailure {
+                    saveMessage = it.message ?: "Auto-save failed"
+                }
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onBack) { Text("‹ Files") }
+            Text(relativePath, style = MaterialTheme.typography.titleMedium)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = { saveNow() }) { Text("Save") }
+            OutlinedButton(onClick = { showFind = true }) { Text("Find / Replace") }
+            Text(if (content == savedContent) "Saved" else "Unsaved")
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Auto Save")
+            Switch(checked = autoSave, onCheckedChange = { autoSave = it })
+            Text(saveMessage, color = MaterialTheme.colorScheme.primary)
+        }
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                (1..lineCount).joinToString("\n"),
+                modifier = Modifier.padding(top = 16.dp),
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                )
+            )
+            OutlinedTextField(
+                value = content,
+                onValueChange = { content = it },
+                modifier = Modifier.weight(1f).fillMaxSize(),
+                textStyle = TextStyle(fontFamily = FontFamily.Monospace),
+                visualTransformation = syntax,
+                placeholder = { Text("Start writing code…") }
+            )
+        }
+    }
+
+    if (showFind) {
+        AlertDialog(
+            onDismissRequest = { showFind = false },
+            title = { Text("Find and Replace") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = findText,
+                        onValueChange = { findText = it },
+                        label = { Text("Find") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = replaceText,
+                        onValueChange = { replaceText = it },
+                        label = { Text("Replace with") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (findText.isNotEmpty()) content = content.replace(findText, replaceText)
+                    showFind = false
+                }) { Text("Replace All") }
+            },
+            dismissButton = { TextButton(onClick = { showFind = false }) { Text("Close") } }
+        )
+    }
+}
+
+private class CodeSyntaxTransformation(private val extension: String) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val builder = AnnotatedString.Builder(text)
+        val commentPattern = if (extension == "py") {
+            Regex("#[^\\n]*")
+        } else {
+            Regex("//[^\\n]*|/\\*[\\s\\S]*?\\*/")
+        }
+        commentPattern.findAll(text).forEach {
+            builder.addStyle(SpanStyle(color = Color(0xFF70A982)), it.range.first, it.range.last + 1)
+        }
+        Regex("\"[^\"]*\"|'[^']*'").findAll(text).forEach {
+            builder.addStyle(SpanStyle(color = Color(0xFFE3A66B)), it.range.first, it.range.last + 1)
+        }
+        val keywords = when (extension) {
+            "py" -> "def|class|return|if|elif|else|for|while|import|from|as|try|except|with|True|False|None|async|await"
+            "html" -> "html|head|body|div|span|script|style|title|meta|link|button|input"
+            "css" -> "important|media|keyframes|font-face"
+            else -> "const|let|var|function|return|if|else|class|new|import|export|from|async|await|true|false|null|undefined"
+        }
+        Regex("\\b($keywords)\\b").findAll(text).forEach {
+            builder.addStyle(SpanStyle(color = Color(0xFF8E9FFF)), it.range.first, it.range.last + 1)
+        }
+        if (extension == "html" || extension == "htm") {
+            Regex("</?[A-Za-z][^>]*>").findAll(text).forEach {
+                builder.addStyle(SpanStyle(color = Color(0xFF69B7D6)), it.range.first, it.range.last + 1)
+            }
+        }
+        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
 }
 
