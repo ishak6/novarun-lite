@@ -14,6 +14,7 @@ import com.novarun.lite.server.LocalServerService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -71,6 +72,13 @@ class RuntimeStorageInstrumentedTest {
             val result = store.execute("SELECT title FROM tasks")
             assertEquals(listOf("title"), result.columns)
             assertEquals("NovaRun", result.rows.single().single())
+            assertThrows(IllegalArgumentException::class.java) {
+                store.execute("ATTACH DATABASE '/tmp/outside.db' AS external")
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                store.execute("-- external path\\nATTACH DATABASE '/tmp/outside.db' AS external")
+            }
+            assertEquals("ATTACH", store.execute("SELECT 'ATTACH'").rows.single().single())
         } finally {
             store.close()
             root.deleteRecursively()
