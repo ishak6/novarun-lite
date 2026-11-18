@@ -332,6 +332,7 @@ private fun ProjectFilesScreen(project: ProjectSummary, onBack: () -> Unit) {
     var targetEntry by remember { mutableStateOf<ProjectFileEntry?>(null) }
     var input by remember { mutableStateOf("") }
     var selectedFile by remember { mutableStateOf<String?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
 
     fun refresh() { entries = store.list(currentDirectory) }
@@ -346,15 +347,31 @@ private fun ProjectFilesScreen(project: ProjectSummary, onBack: () -> Unit) {
             TextButton(onClick = onBack) { Text("‹ Projects") }
             Text(project.name, style = MaterialTheme.typography.titleLarge)
         }
-        Text(if (currentDirectory.isEmpty()) "/" else "/$currentDirectory")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (currentDirectory.isNotEmpty()) {
+                TextButton(onClick = {
+                    currentDirectory = currentDirectory.substringBeforeLast('/', "")
+                    refresh()
+                }) { Text("Up") }
+            }
+            Text(if (currentDirectory.isEmpty()) "/" else "/$currentDirectory")
+        }
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Search files and folders") },
+            singleLine = true
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { dialogMode = "new-file"; input = "" }) { Text("New File") }
             OutlinedButton(onClick = { dialogMode = "new-folder"; input = "" }) { Text("New Folder") }
         }
         selectedFile?.let { Text("Selected: $it") }
         message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        val visibleEntries = if (searchQuery.isBlank()) entries else store.search(searchQuery)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(entries, key = { it.relativePath }) { entry ->
+            items(visibleEntries, key = { it.relativePath }) { entry ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
