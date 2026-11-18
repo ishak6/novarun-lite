@@ -30,6 +30,21 @@ class ProjectDatabaseStore(projectDirectory: File) : AutoCloseable {
         require(statement.length <= MAX_SQL_LENGTH) { "SQL statement is too long" }
         require(maxRows in 1..MAX_ROWS) { "Invalid result row limit" }
 
+        val commentStripped = statement
+            .replace(Regex("(?s)/\\*.*?\\*/"), " ")
+            .lineSequence()
+            .joinToString(" ") { it.substringBefore("--") }
+            .trimStart()
+        val firstKeyword = commentStripped.takeWhile { it.isLetterOrDigit() || it == '_' }.uppercase()
+        require(firstKeyword != "ATTACH" && firstKeyword != "DETACH") {
+            "Attaching external databases is blocked to preserve project isolation"
+        }
+        if (firstKeyword == "VACUUM") {
+            require(!Regex("\\bINTO\\b", RegexOption.IGNORE_CASE).containsMatchIn(commentStripped)) {
+                "VACUUM INTO is blocked outside the project database"
+            }
+        }
+
         val normalized = statement.substringBefore(';').trimStart().uppercase()
         val isQuery = normalized.startsWith("SELECT") ||
             normalized.startsWith("WITH") ||
