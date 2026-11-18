@@ -603,6 +603,7 @@ private fun CodeEditorScreen(
     var savedContent by remember(relativePath) { mutableStateOf(content) }
     val context = LocalContext.current
     val settings = remember(context) { AppSettingsStore(context.applicationContext) }
+    val scope = rememberCoroutineScope()
     var autoSave by remember { mutableStateOf(settings.autoSaveEnabled()) }
     var saveMessage by remember { mutableStateOf("Loaded") }
     var findText by remember { mutableStateOf("") }
@@ -617,8 +618,10 @@ private fun CodeEditorScreen(
         showDiscardDialog = true
     }
 
-    fun saveNow(): Boolean {
-        val result = runCatching { store.writeTextAtomic(relativePath, content) }
+    suspend fun saveNow(): Boolean {
+        val result = withContext(Dispatchers.IO) {
+            runCatching { store.writeTextAtomic(relativePath, content) }
+        }
         result.onSuccess {
             savedContent = content
             saveMessage = "Saved"
@@ -631,14 +634,15 @@ private fun CodeEditorScreen(
     LaunchedEffect(content, autoSave, relativePath) {
         if (loadError == null && autoSave && content != savedContent) {
             delay(settings.autoSaveDelayMs())
-            runCatching { store.writeTextAtomic(relativePath, content) }
-                .onSuccess {
-                    savedContent = content
-                    saveMessage = "Auto-saved"
-                }
-                .onFailure {
-                    saveMessage = it.message ?: "Auto-save failed"
-                }
+            val result = withContext(Dispatchers.IO) {
+                runCatching { store.writeTextAtomic(relativePath, content) }
+            }
+            result.onSuccess {
+                savedContent = content
+                saveMessage = "Auto-saved"
+            }.onFailure {
+                saveMessage = it.message ?: "Auto-save failed"
+            }
         }
     }
 
@@ -654,7 +658,7 @@ private fun CodeEditorScreen(
         }
         loadError?.let { Text("Cannot edit this file: $it", color = MaterialTheme.colorScheme.error) }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = { saveNow() }, enabled = loadError == null) { Text("Save") }
+            Button(onClick = { scope.launch { saveNow() } }, enabled = loadError == null) { Text("Save") }
             OutlinedButton(onClick = { showFind = true }) { Text("Find / Replace") }
             Text(if (content == savedContent) "Saved" else "Unsaved")
         }
@@ -698,9 +702,11 @@ private fun CodeEditorScreen(
             text = { Text("Save your changes before leaving this file?") },
             confirmButton = {
                 TextButton(onClick = {
-                    if (saveNow()) {
-                        showDiscardDialog = false
-                        onBack()
+                    scope.launch {
+                        if (saveNow()) {
+                            showDiscardDialog = false
+                            onBack()
+                        }
                     }
                 }) { Text("Save and Exit") }
             },
