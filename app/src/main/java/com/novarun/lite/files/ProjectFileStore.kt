@@ -190,7 +190,7 @@ class ProjectFileStore(projectDirectory: File) {
 
     private fun validateName(name: String) {
         require(name.isNotBlank() && name.length <= 120) { "Name must be 1–120 characters" }
-        require(name != "." && name != ".." && !name.contains('/') && !name.contains('\\')) {
+        require(name != "." && name != ".." && name != ".novarun-project" && !name.contains('/') && !name.contains('\\')) {
             "Invalid file name"
         }
         require(!name.contains('\u0000')) { "Invalid file name" }
@@ -202,7 +202,9 @@ class ProjectFileStore(projectDirectory: File) {
         }
         require(!path.contains('\\') && !path.contains('\u0000')) { "Invalid path" }
         val parts = path.split('/')
-        require(parts.none { it.isBlank() || it == "." || it == ".." }) { "Unsafe path segment" }
+        require(parts.none { it.isBlank() || it == "." || it == ".." || it == ".novarun-project" }) {
+            "Unsafe or reserved path segment"
+        }
         return parts.joinToString("/")
     }
 
