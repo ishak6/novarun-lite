@@ -23,7 +23,7 @@ class ProjectFileStore(projectDirectory: File) {
         val directory = resolve(relativeDirectory, allowRoot = true)
         require(directory.isDirectory) { "Selected path is not a folder" }
         return directory.listFiles().orEmpty()
-            .filterNot { it.name == ".novarun-project" }
+            .filterNot { it.name == ".novarun-project" || it.name == "novarun.sqlite" }
             .onEach { child ->
                 require(!Files.isSymbolicLink(child.toPath())) { "Symbolic links are not supported" }
             }
@@ -190,7 +190,7 @@ class ProjectFileStore(projectDirectory: File) {
 
     private fun validateName(name: String) {
         require(name.isNotBlank() && name.length <= 120) { "Name must be 1–120 characters" }
-        require(name != "." && name != ".." && name != ".novarun-project" && !name.contains('/') && !name.contains('\\')) {
+        require(name != "." && name != ".." && name != ".novarun-project" && name != "novarun.sqlite" && !name.contains('/') && !name.contains('\\')) {
             "Invalid file name"
         }
         require(!name.contains('\u0000')) { "Invalid file name" }
@@ -202,7 +202,7 @@ class ProjectFileStore(projectDirectory: File) {
         }
         require(!path.contains('\\') && !path.contains('\u0000')) { "Invalid path" }
         val parts = path.split('/')
-        require(parts.none { it.isBlank() || it == "." || it == ".." || it == ".novarun-project" }) {
+        require(parts.none { it.isBlank() || it == "." || it == ".." || it == ".novarun-project" || it == "novarun.sqlite" }) {
             "Unsafe or reserved path segment"
         }
         return parts.joinToString("/")
