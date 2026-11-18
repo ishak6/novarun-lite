@@ -26,6 +26,19 @@ class ProjectFileStoreTest {
     }
 
     @Test
+    fun readsAndAtomicallySavesUtf8Text() {
+        val root = Files.createTempDirectory("novarun-save-test").toFile()
+        try {
+            val store = ProjectFileStore(root)
+            store.createFile("index.html")
+            store.writeTextAtomic("index.html", "<h1>বাংলা</h1>")
+            assertEquals("<h1>বাংলা</h1>", store.readText("index.html"))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun rejectsTraversalAndAbsolutePaths() {
         val root = Files.createTempDirectory("novarun-path-test").toFile()
         try {
