@@ -23,6 +23,13 @@ class ZipPathSafetyTest {
     }
 
     @Test
+    fun rejectsInternalMetadataPath() {
+        assertThrows(IllegalArgumentException::class.java) {
+            normalizeZipEntryPath(".novarun-project")
+        }
+    }
+
+    @Test
     fun rejectsExcessivePathDepth() {
         val deeplyNested = (1..33).joinToString("/") { "d$it" } + "/file.txt"
         assertThrows(IllegalArgumentException::class.java) {
