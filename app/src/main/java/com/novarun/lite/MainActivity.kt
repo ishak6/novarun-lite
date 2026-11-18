@@ -1024,6 +1024,8 @@ private fun ServerDashboardScreen(controller: LocalServerController, settings: A
 @Composable
 private fun ProjectDatabaseScreen(project: ProjectSummary, onBack: () -> Unit) {
     val store = remember(project.directory.absolutePath) { ProjectDatabaseStore(project.directory) }
+    val scope = rememberCoroutineScope()
+    var runningQuery by remember { mutableStateOf(false) }
     var sql by remember(project.directory.absolutePath) {
         mutableStateOf("SELECT name FROM sqlite_master WHERE type = 'table';")
     }
@@ -1050,11 +1052,18 @@ private fun ProjectDatabaseScreen(project: ProjectSummary, onBack: () -> Unit) {
             label = { Text("SQL statement") },
             minLines = 4
         )
-        Button(onClick = {
-            runCatching { store.execute(sql) }
-                .onSuccess { result = it; error = null }
-                .onFailure { error = it.message ?: "SQL execution failed" }
-        }) { Text("Run SQL") }
+        Button(
+            enabled = !runningQuery,
+            onClick = {
+                runningQuery = true
+                scope.launch {
+                    val queryResult = withContext(Dispatchers.IO) { runCatching { store.execute(sql) } }
+                    queryResult.onSuccess { result = it; error = null }
+                        .onFailure { error = it.message ?: "SQL execution failed" }
+                    runningQuery = false
+                }
+            }
+        ) { Text(if (runningQuery) "Running…" else "Run SQL") }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         result?.let { query ->
             Text(query.message, color = MaterialTheme.colorScheme.primary)
