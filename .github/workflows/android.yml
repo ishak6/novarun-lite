@@ -53,6 +53,12 @@ jobs:
           script: gradle :app:connectedDebugAndroidTest
       - name: Build minified release APK
         run: gradle :app:assembleRelease
+      - name: Enforce release APK size budget
+        run: |
+          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          SIZE=$(stat -c %s "$APK")
+          echo "Minified release APK size: $SIZE bytes"
+          test "$SIZE" -le 15728640
       - name: Sign QA APK with ephemeral debug key
         run: |
           mkdir -p "$HOME/.android"
