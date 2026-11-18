@@ -809,7 +809,10 @@ private fun CodeEditorScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (findText.isNotEmpty()) content = content.replace(findText, replaceText)
+                    if (findText.isNotEmpty()) {
+                        val updated = editorState.text.toString().replace(findText, replaceText)
+                        editorState.edit { replace(0, length, updated) }
+                    }
                     showFind = false
                 }) { Text("Replace All") }
             },
