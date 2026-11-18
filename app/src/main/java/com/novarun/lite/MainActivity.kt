@@ -691,11 +691,12 @@ private class LocalServerController {
         onState: (Boolean) -> Unit
     ) {
         check(server == null) { "Server is already active" }
-        lateinit var instance: LocalHttpServer
-        instance = LocalHttpServer(project.directory, port, onLog) { isRunning ->
-            if (!isRunning && server === instance) server = null
+        var created: LocalHttpServer? = null
+        val instance = LocalHttpServer(project.directory, port, onLog) { isRunning ->
+            if (!isRunning && server === created) server = null
             onState(isRunning)
         }
+        created = instance
         server = instance
         instance.start()
     }
