@@ -87,6 +87,41 @@ class ProjectFileStore(projectDirectory: File) {
         check(source.renameTo(destination)) { "Move failed" }
     }
 
+
+    fun readText(relativePath: String, maxBytes: Long = 2L * 1024L * 1024L): String {
+        val file = resolve(relativePath)
+        require(file.isFile) { "Selected path is not a file" }
+        require(file.length() <= maxBytes) { "File is larger than the 2 MB editor limit" }
+        return file.readText(Charsets.UTF_8)
+    }
+
+    fun writeTextAtomic(relativePath: String, content: String, maxBytes: Long = 2L * 1024L * 1024L) {
+        val target = resolve(relativePath)
+        require(target.isFile) { "Selected file does not exist" }
+        val bytes = content.toByteArray(Charsets.UTF_8)
+        require(bytes.size.toLong() <= maxBytes) { "File is larger than the 2 MB editor limit" }
+        val temporary = File(target.parentFile, ".${target.name}.tmp-${System.nanoTime()}")
+        try {
+            temporary.writeBytes(bytes)
+            try {
+                Files.move(
+                    temporary.toPath(),
+                    target.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                )
+            } catch (_: Exception) {
+                Files.move(
+                    temporary.toPath(),
+                    target.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                )
+            }
+        } finally {
+            if (temporary.exists()) temporary.delete()
+        }
+    }
+
     fun search(query: String): List<ProjectFileEntry> {
         val needle = query.trim()
         if (needle.isEmpty()) return emptyList()
