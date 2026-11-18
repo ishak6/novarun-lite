@@ -330,6 +330,7 @@ private fun ProjectFilesScreen(project: ProjectSummary, onBack: () -> Unit) {
     var entries by remember(project.directory.absolutePath) { mutableStateOf(store.list()) }
     var dialogMode by remember { mutableStateOf("none") }
     var targetEntry by remember { mutableStateOf<ProjectFileEntry?>(null) }
+    var deleteTarget by remember { mutableStateOf<ProjectFileEntry?>(null) }
     var input by remember { mutableStateOf("") }
     var selectedFile by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
@@ -406,16 +407,30 @@ private fun ProjectFilesScreen(project: ProjectSummary, onBack: () -> Unit) {
                                     dialogMode = "move"
                                 }) { Text("Move") }
                             }
-                            TextButton(onClick = {
-                                runCatching { store.delete(entry.relativePath) }
-                                    .onSuccess { message = "Deleted ${entry.name}"; refresh() }
-                                    .onFailure { message = it.message ?: "Delete failed" }
-                            }) { Text("Delete") }
+                            TextButton(onClick = { deleteTarget = entry }) { Text("Delete") }
                         }
                     }
                 }
             }
         }
+    }
+
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete ${target.name}?") },
+            text = { Text("This permanently removes the selected item from this project.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    runCatching { store.delete(target.relativePath) }
+                        .onSuccess { message = "Deleted ${target.name}"; refresh() }
+                        .onFailure { message = it.message ?: "Delete failed" }
+                    deleteTarget = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
+        )
     }
 
     if (dialogMode != "none") {
