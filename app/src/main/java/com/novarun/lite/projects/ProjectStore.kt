@@ -223,11 +223,11 @@ internal fun normalizeZipEntryPath(rawPath: String): String {
     }
     require(!Regex("^[A-Za-z]:").containsMatchIn(rawPath)) { "Drive paths are not allowed" }
 
-    val isDirectory = rawPath.endsWith('/')
-    val parts = rawPath.split('/')
+    val trimmed = rawPath.removeSuffix("/")
+    require(trimmed.isNotEmpty()) { "ZIP entry path is empty" }
+    val parts = trimmed.split('/')
     require(parts.none { it.isEmpty() || it == "." || it == ".." }) {
         "ZIP path contains an unsafe segment"
     }
-    val normalized = parts.joinToString("/")
-    return if (isDirectory) normalized else normalized
+    return parts.joinToString("/")
 }
