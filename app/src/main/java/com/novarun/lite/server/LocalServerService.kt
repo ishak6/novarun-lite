@@ -12,8 +12,6 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.novarun.lite.MainActivity
-import com.novarun.lite.R
-import com.novarun.lite.files.ProjectFileStore
 import java.io.File
 
 class LocalServerService : Service() {
@@ -26,39 +24,36 @@ class LocalServerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        return when (intent?.action) {
             ACTION_STOP -> {
                 stopServer()
-                return START_NOT_STICKY
+                START_NOT_STICKY
             }
-            ACTION_START -> startServer(intent)
-            else -> return START_NOT_STICKY
+            ACTION_START -> if (startServer(intent)) START_REDELIVER_INTENT else START_NOT_STICKY
+            else -> START_NOT_STICKY
         }
-        return START_REDELIVER_INTENT
     }
 
-    private fun startServer(intent: Intent) {
-        stopping = true
-        localServer?.stop()
-        localServer = null
+    private fun startServer(intent: Intent): Boolean {
+        if (localServer != null) {
+            sendLog("A server is already active. Stop it before starting another.")
+            return false
+        }
         stopping = false
-        isRunning = false
-
         val projectPath = intent.getStringExtra(EXTRA_PROJECT_PATH)
         val port = intent.getIntExtra(EXTRA_PORT, -1)
         val bindAddress = intent.getStringExtra(EXTRA_BIND_ADDRESS) ?: "127.0.0.1"
         val token = intent.getStringExtra(EXTRA_AUTH_TOKEN)
 
-        if (projectPath.isNullOrBlank() || port !in 1024..65535) {
+        if (projectPath.isNullOrBlank() || !File(projectPath).isDirectory || port !in 1024..65535) {
             sendLog("Invalid server start configuration")
             stopSelf()
-            return
+            return false
         }
 
-        startForegroundCompat(buildNotification(port, bindAddress))
-        runCatching {
-            ProjectFileStore(File(projectPath))
-            LocalHttpServer(
+        return runCatching {
+            startForegroundCompat(buildNotification(port, bindAddress))
+            val server = LocalHttpServer(
                 File(projectPath),
                 port,
                 onLog = ::sendLog,
@@ -72,14 +67,18 @@ class LocalServerService : Service() {
                 },
                 bindAddress = bindAddress,
                 authToken = token
-            ).also { server ->
-                localServer = server
-                server.start()
-            }
-        }.onFailure {
+            )
+            localServer = server
+            server.start()
+            true
+        }.getOrElse {
             sendLog(it.message ?: "Could not start local server")
+            localServer = null
+            isRunning = false
+            sendState(false)
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
+            false
         }
     }
 
