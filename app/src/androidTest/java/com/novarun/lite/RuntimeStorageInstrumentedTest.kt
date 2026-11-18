@@ -5,20 +5,60 @@ import androidx.core.content.ContextCompat
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.novarun.lite.database.ProjectDatabaseStore
+import com.novarun.lite.projects.ProjectStore
 import com.novarun.lite.security.SecureTokenStore
 import com.novarun.lite.settings.AppSettingsStore
 import com.novarun.lite.settings.ThemeMode
 import com.novarun.lite.server.LocalServerService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.net.ServerSocket
 import java.util.UUID
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class RuntimeStorageInstrumentedTest {
+
+    @Test
+    fun projectZipImportCreatesFilesAndBlocksTraversal() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = ProjectStore(context)
+        val archive = ByteArrayOutputStream().also { bytes ->
+            ZipOutputStream(bytes).use { zip ->
+                zip.putNextEntry(ZipEntry("site/index.html"))
+                zip.write("<h1>NovaRun</h1>".toByteArray())
+                zip.closeEntry()
+            }
+        }
+        val imported = store.importZip(ByteArrayInputStream(archive.toByteArray()), "M1-Import.zip")
+        try {
+            assertTrue(File(imported.directory, "site/index.html").isFile)
+        } finally {
+            store.deleteProject(imported.directory)
+        }
+
+        val malicious = ByteArrayOutputStream().also { bytes ->
+            ZipOutputStream(bytes).use { zip ->
+                zip.putNextEntry(ZipEntry("../outside.txt"))
+                zip.write("blocked".toByteArray())
+                zip.closeEntry()
+            }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            store.importZip(ByteArrayInputStream(malicious.toByteArray()), "M1-Malicious.zip")
+        }
+        assertFalse(File(context.filesDir, "outside.txt").exists())
+    }
+
     @Test
     fun sqliteCreatesWritesAndReadsProjectDatabase() {
         val context = ApplicationProvider.getApplicationContext<Context>()
