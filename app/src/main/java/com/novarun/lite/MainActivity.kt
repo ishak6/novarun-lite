@@ -577,7 +577,8 @@ private fun CodeEditorScreen(
     val loadError = initialContent.exceptionOrNull()?.message
     var content by remember(relativePath) { mutableStateOf(initialContent.getOrDefault("")) }
     var savedContent by remember(relativePath) { mutableStateOf(content) }
-    val settings = remember { AppSettingsStore(LocalContext.current.applicationContext) }
+    val context = LocalContext.current
+    val settings = remember(context) { AppSettingsStore(context.applicationContext) }
     var autoSave by remember { mutableStateOf(settings.autoSaveEnabled()) }
     var saveMessage by remember { mutableStateOf("Loaded") }
     var findText by remember { mutableStateOf("") }
