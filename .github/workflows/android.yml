@@ -46,7 +46,10 @@ jobs:
         run: gradle :app:assembleRelease
       - name: Sign QA APK with ephemeral debug key
         run: |
-          test -f "$HOME/.android/debug.keystore"
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$HOME/.android/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out app/build/outputs/apk/release/app-release-qa.apk app/build/outputs/apk/release/app-release-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify app/build/outputs/apk/release/app-release-qa.apk
       - name: Upload debug APK
@@ -58,7 +61,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: novarun-lite-release-unsigned
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
       - name: Upload installable QA APK
         uses: actions/upload-artifact@v5
         with:
