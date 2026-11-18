@@ -104,7 +104,14 @@ class LocalHttpServer(
                         header.substring(separator + 1).trim()
                 }
             }
-            if (authToken != null && requestHeaders["authorization"] != "Bearer $authToken") {
+            val expectedAuthorization = authToken?.let { "Bearer $it" }
+            val providedAuthorization = requestHeaders["authorization"].orEmpty()
+            val authorized = expectedAuthorization == null ||
+                java.security.MessageDigest.isEqual(
+                    expectedAuthorization.toByteArray(StandardCharsets.UTF_8),
+                    providedAuthorization.toByteArray(StandardCharsets.UTF_8)
+                )
+            if (!authorized) {
                 respond(output, 401, "Unauthorized", "A valid NovaRun access token is required",
                     mapOf("WWW-Authenticate" to "Bearer"))
                 onLog("Rejected unauthenticated LAN request")
