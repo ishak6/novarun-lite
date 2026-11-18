@@ -124,6 +124,7 @@ class ProjectStore(context: Context) {
         }
     }
 
+    @Synchronized
     fun exportZip(directory: File, output: OutputStream) {
         val project = requireProjectDirectory(directory)
         ZipOutputStream(BufferedOutputStream(output)).use { zip ->
