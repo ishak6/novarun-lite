@@ -17,6 +17,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -584,9 +585,14 @@ private fun CodeEditorScreen(
     var findText by remember { mutableStateOf("") }
     var replaceText by remember { mutableStateOf("") }
     var showFind by remember { mutableStateOf(false) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
     val extension = relativePath.substringAfterLast('.', "").lowercase()
     val lineCount = content.count { it == '\n' } + 1
     val syntax = remember(extension) { CodeSyntaxTransformation(extension) }
+
+    BackHandler(enabled = content != savedContent) {
+        showDiscardDialog = true
+    }
 
     fun saveNow() {
         runCatching { store.writeTextAtomic(relativePath, content) }
@@ -618,7 +624,9 @@ private fun CodeEditorScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onBack) { Text("‹ Files") }
+            TextButton(onClick = {
+                if (content != savedContent) showDiscardDialog = true else onBack()
+            }) { Text("‹ Files") }
             Text(relativePath, style = MaterialTheme.typography.titleMedium)
         }
         loadError?.let { Text("Cannot edit this file: $it", color = MaterialTheme.colorScheme.error) }
@@ -657,6 +665,33 @@ private fun CodeEditorScreen(
                 placeholder = { Text("Start writing code…") }
             )
         }
+    }
+
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Unsaved changes") },
+            text = { Text("Save your changes before leaving this file?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    saveNow()
+                    if (loadError == null) {
+                        showDiscardDialog = false
+                        onBack()
+                    }
+                }) { Text("Save and Exit") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        showDiscardDialog = false
+                        onBack()
+                    }) { Text("Discard") }
+                    TextButton(onClick = { showDiscardDialog = false }) { Text("Cancel") }
+                }
+            }
+        )
     }
 
     if (showFind) {
