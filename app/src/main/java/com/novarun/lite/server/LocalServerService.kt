@@ -29,15 +29,26 @@ class LocalServerService : Service() {
                 stopServer()
                 START_NOT_STICKY
             }
-            ACTION_START -> if (startServer(intent)) START_REDELIVER_INTENT else START_NOT_STICKY
+            ACTION_START -> if (startServer(intent, restart = false)) START_REDELIVER_INTENT else START_NOT_STICKY
+            ACTION_RESTART -> if (startServer(intent, restart = true)) START_REDELIVER_INTENT else START_NOT_STICKY
             else -> START_NOT_STICKY
         }
     }
 
-    private fun startServer(intent: Intent): Boolean {
+    private fun startServer(intent: Intent, restart: Boolean): Boolean {
         if (localServer != null) {
-            sendLog("A server is already active. Stop it before starting another.")
-            return false
+            if (!restart) {
+                sendLog("A server is already active. Use Restart or Stop first.")
+                return false
+            }
+            stopping = true
+            val stopped = localServer?.stop() ?: true
+            if (!stopped) {
+                stopping = false
+                sendLog("Previous server has not stopped yet; restart cancelled")
+                return false
+            }
+            localServer = null
         }
         stopping = false
         val projectPath = intent.getStringExtra(EXTRA_PROJECT_PATH)
@@ -59,7 +70,7 @@ class LocalServerService : Service() {
                 onLog = ::sendLog,
                 onState = { running ->
                     isRunning = running
-                    sendState(running)
+                    if (!stopping) sendState(running)
                     if (!running && !stopping) {
                         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
                         stopSelf()
@@ -171,6 +182,7 @@ class LocalServerService : Service() {
     companion object {
         const val ACTION_START = "com.novarun.lite.server.START"
         const val ACTION_STOP = "com.novarun.lite.server.STOP"
+        const val ACTION_RESTART = "com.novarun.lite.server.RESTART"
         const val ACTION_LOG = "com.novarun.lite.server.LOG"
         const val ACTION_STATE = "com.novarun.lite.server.STATE"
         const val EXTRA_PROJECT_PATH = "project_path"
