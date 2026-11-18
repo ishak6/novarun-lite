@@ -69,6 +69,8 @@ import com.novarun.lite.projects.ProjectStore
 import com.novarun.lite.projects.ProjectSummary
 import com.novarun.lite.files.ProjectFileEntry
 import com.novarun.lite.files.ProjectFileStore
+import com.novarun.lite.database.ProjectDatabaseStore
+import com.novarun.lite.database.SqlQueryResult
 import com.novarun.lite.server.LocalHttpServer
 import com.novarun.lite.server.findLanIpv4Address
 import kotlinx.coroutines.delay
@@ -201,6 +203,7 @@ private fun ProjectManagerScreen() {
     var exportTarget by remember { mutableStateOf<ProjectSummary?>(null) }
     var openedProject by remember { mutableStateOf<ProjectSummary?>(null) }
     var editorFile by remember { mutableStateOf<String?>(null) }
+    var databaseOpen by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -244,7 +247,12 @@ private fun ProjectManagerScreen() {
 
     if (openedProject != null) {
         val activeProject = openedProject!!
-        if (editorFile != null) {
+        if (databaseOpen) {
+            ProjectDatabaseScreen(
+                project = activeProject,
+                onBack = { databaseOpen = false }
+            )
+        } else if (editorFile != null) {
             CodeEditorScreen(
                 project = activeProject,
                 relativePath = editorFile!!,
@@ -254,7 +262,8 @@ private fun ProjectManagerScreen() {
             ProjectFilesScreen(
                 project = activeProject,
                 onBack = { openedProject = null },
-                onOpenFile = { editorFile = it }
+                onOpenFile = { editorFile = it },
+                onOpenDatabase = { databaseOpen = true }
             )
         }
         return
@@ -380,7 +389,8 @@ private fun ProjectManagerScreen() {
 private fun ProjectFilesScreen(
     project: ProjectSummary,
     onBack: () -> Unit,
-    onOpenFile: (String) -> Unit
+    onOpenFile: (String) -> Unit,
+    onOpenDatabase: () -> Unit
 ) {
     val store = remember(project.directory.absolutePath) { ProjectFileStore(project.directory) }
     var currentDirectory by remember(project.directory.absolutePath) { mutableStateOf("") }
@@ -404,6 +414,7 @@ private fun ProjectFilesScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onBack) { Text("‹ Projects") }
             Text(project.name, style = MaterialTheme.typography.titleLarge)
+            TextButton(onClick = onOpenDatabase) { Text("Database") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (currentDirectory.isNotEmpty()) {
@@ -856,6 +867,57 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
         LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(logs.toList()) { line ->
                 Text(line, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun ProjectDatabaseScreen(project: ProjectSummary, onBack: () -> Unit) {
+    val store = remember(project.directory.absolutePath) { ProjectDatabaseStore(project.directory) }
+    var sql by remember(project.directory.absolutePath) {
+        mutableStateOf("SELECT name FROM sqlite_master WHERE type = 'table';")
+    }
+    var result by remember { mutableStateOf<SqlQueryResult?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    DisposableEffect(store) {
+        onDispose { store.close() }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onBack) { Text("‹ Files") }
+            Text("SQLite • ${project.name}", style = MaterialTheme.typography.titleLarge)
+        }
+        Text("Database file: ${ProjectDatabaseStore.DATABASE_NAME}")
+        OutlinedTextField(
+            value = sql,
+            onValueChange = { sql = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("SQL statement") },
+            minLines = 4
+        )
+        Button(onClick = {
+            runCatching { store.execute(sql) }
+                .onSuccess { result = it; error = null }
+                .onFailure { error = it.message ?: "SQL execution failed" }
+        }) { Text("Run SQL") }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        result?.let { query ->
+            Text(query.message, color = MaterialTheme.colorScheme.primary)
+            if (query.columns.isNotEmpty()) {
+                Text(query.columns.joinToString(" | "), style = MaterialTheme.typography.labelLarge)
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(query.rows) { row ->
+                        Text(row.joinToString(" | ") { it ?: "NULL" })
+                    }
+                }
+                if (query.truncated) Text("Result truncated to 200 rows")
             }
         }
     }
