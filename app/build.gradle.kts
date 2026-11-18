@@ -17,12 +17,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    lint {
-        // This detector crashes inside lint's Kotlin Analysis API on this toolchain.
-        // The app does not use LiveData; keep all other lint checks enabled.
-        disable += "NullSafeMutableLiveData"
-    }
-
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
