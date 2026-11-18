@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -50,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -79,6 +82,8 @@ import com.novarun.lite.database.SqlQueryResult
 import com.novarun.lite.server.LocalServerService
 import com.novarun.lite.server.findLanIpv4Address
 import com.novarun.lite.security.SecureTokenStore
+import com.novarun.lite.settings.AppSettingsStore
+import com.novarun.lite.settings.ThemeMode
 import kotlinx.coroutines.delay
 import java.security.SecureRandom
 import java.util.Base64
@@ -105,9 +110,15 @@ private enum class MainTab(val label: String, val symbol: String) {
 @Composable
 private fun NovaRunApp() {
     var selectedTab by remember { mutableStateOf(0) }
-    var darkMode by remember { mutableStateOf(true) }
-    val tabs = MainTab.entries
     val context = LocalContext.current
+    val settingsStore = remember(context) { AppSettingsStore(context.applicationContext) }
+    var themeMode by remember { mutableStateOf(settingsStore.themeMode()) }
+    val darkMode = when (themeMode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
+    val tabs = MainTab.entries
     val serverController = remember(context) { LocalServerController(context.applicationContext) }
     val colors = if (darkMode) darkColorScheme(
         primary = Blue,
@@ -146,10 +157,14 @@ private fun NovaRunApp() {
                     )
                     MainTab.PROJECTS -> ProjectManagerScreen()
                     MainTab.PREVIEW -> ProjectPreviewScreen()
-                    MainTab.SERVER -> ServerDashboardScreen(serverController)
+                    MainTab.SERVER -> ServerDashboardScreen(serverController, settingsStore)
                     MainTab.SETTINGS -> SettingsScreen(
-                        darkMode = darkMode,
-                        onThemeChange = { darkMode = it }
+                        settings = settingsStore,
+                        themeMode = themeMode,
+                        onThemeChange = {
+                            themeMode = it
+                            settingsStore.setThemeMode(it)
+                        }
                     )
                 }
             }
@@ -178,7 +193,7 @@ private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit, onServer: 
                 Text("Workspace", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text("Projects: ${projects.size}")
-                Text("Server: stopped")
+                Text(if (LocalServerService.isRunning) "Server: running" else "Server: stopped")
                 if (projects.isEmpty()) {
                     Text("No recent projects yet.")
                 } else {
@@ -562,7 +577,8 @@ private fun CodeEditorScreen(
     val loadError = initialContent.exceptionOrNull()?.message
     var content by remember(relativePath) { mutableStateOf(initialContent.getOrDefault("")) }
     var savedContent by remember(relativePath) { mutableStateOf(content) }
-    var autoSave by remember { mutableStateOf(true) }
+    val settings = remember { AppSettingsStore(LocalContext.current.applicationContext) }
+    var autoSave by remember { mutableStateOf(settings.autoSaveEnabled()) }
     var saveMessage by remember { mutableStateOf("Loaded") }
     var findText by remember { mutableStateOf("") }
     var replaceText by remember { mutableStateOf("") }
@@ -584,7 +600,7 @@ private fun CodeEditorScreen(
 
     LaunchedEffect(content, autoSave, relativePath) {
         if (loadError == null && autoSave && content != savedContent) {
-            delay(900)
+            delay(settings.autoSaveDelayMs())
             runCatching { store.writeTextAtomic(relativePath, content) }
                 .onSuccess {
                     savedContent = content
@@ -612,7 +628,10 @@ private fun CodeEditorScreen(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Auto Save")
-            Switch(checked = autoSave, onCheckedChange = { autoSave = it })
+            Switch(checked = autoSave, onCheckedChange = {
+                autoSave = it
+                settings.setAutoSaveEnabled(it)
+            })
             Text(saveMessage, color = MaterialTheme.colorScheme.primary)
         }
         Row(
@@ -730,15 +749,15 @@ private class LocalServerController(private val context: Context) {
 }
 
 @Composable
-private fun ServerDashboardScreen(controller: LocalServerController) {
+private fun ServerDashboardScreen(controller: LocalServerController, settings: AppSettingsStore) {
     val context = LocalContext.current
     val projects = remember { ProjectStore(context.applicationContext).listProjects() }
     var selectedProject by remember { mutableStateOf(projects.firstOrNull()) }
     var menuExpanded by remember { mutableStateOf(false) }
-    var portText by remember { mutableStateOf("8080") }
+    var portText by remember { mutableStateOf(settings.defaultPort().toString()) }
     var running by remember { mutableStateOf(LocalServerService.isRunning) }
     var starting by remember { mutableStateOf(false) }
-    var lanEnabled by remember { mutableStateOf(false) }
+    var lanEnabled by remember { mutableStateOf(settings.lanAccessEnabled()) }
     var lanAddress by remember { mutableStateOf(findLanIpv4Address()) }
     val tokenStore = remember(context) { SecureTokenStore(context.applicationContext) }
     var accessToken by remember { mutableStateOf(tokenStore.load().orEmpty()) }
@@ -790,6 +809,7 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
             addLog("No private LAN IPv4 address found. Connect to Wi-Fi or start a hotspot.")
             return
         }
+        settings.setDefaultPort(port)
         val token = if (lanEnabled) generateAccessToken() else null
         accessToken = token.orEmpty()
         if (token == null) tokenStore.clear() else tokenStore.save(token)
@@ -1153,18 +1173,121 @@ private fun PlaceholderScreen(title: String, detail: String) {
     }
 }
 
+
 @Composable
-private fun SettingsScreen(darkMode: Boolean, onThemeChange: (Boolean) -> Unit) {
+private fun SettingsScreen(
+    settings: AppSettingsStore,
+    themeMode: ThemeMode,
+    onThemeChange: (ThemeMode) -> Unit
+) {
+    val context = LocalContext.current
+    var portText by remember { mutableStateOf(settings.defaultPort().toString()) }
+    var autoSave by remember { mutableStateOf(settings.autoSaveEnabled()) }
+    var delayText by remember { mutableStateOf(settings.autoSaveDelayMs().toString()) }
+    var lanAccess by remember { mutableStateOf(settings.lanAccessEnabled()) }
+    var storageBytes by remember { mutableStateOf(settings.storageUsageBytes()) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val versionName = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+        }.getOrDefault("unknown")
+    }
+
     Column(
-        modifier = Modifier.fillMaxSize().padding(20.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
-        Text("Theme")
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { onThemeChange(true) }) { Text("Dark") }
-            Button(onClick = { onThemeChange(false) }) { Text("Light") }
+        Text("Appearance", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ThemeMode.values().forEach { mode ->
+                if (themeMode == mode) {
+                    Button(onClick = { onThemeChange(mode) }) { Text(mode.name) }
+                } else {
+                    OutlinedButton(onClick = { onThemeChange(mode) }) { Text(mode.name) }
+                }
+            }
         }
-        Text(if (darkMode) "Dark theme selected" else "Light theme selected")
+
+        Text("Server", style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(
+            value = portText,
+            onValueChange = { if (it.length <= 5 && it.all(Char::isDigit)) portText = it },
+            label = { Text("Default port (1024–65535)") },
+            singleLine = true
+        )
+        OutlinedButton(onClick = {
+            val port = portText.toIntOrNull()
+            if (port != null && port in 1024..65535) {
+                settings.setDefaultPort(port)
+                message = "Default port saved"
+            } else {
+                message = "Enter a port from 1024 to 65535"
+            }
+        }) { Text("Save Port") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Allow LAN mode by default")
+            Switch(checked = lanAccess, onCheckedChange = {
+                lanAccess = it
+                settings.setLanAccessEnabled(it)
+            })
+        }
+
+        Text("Editor", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Auto Save")
+            Switch(checked = autoSave, onCheckedChange = {
+                autoSave = it
+                settings.setAutoSaveEnabled(it)
+            })
+        }
+        OutlinedTextField(
+            value = delayText,
+            onValueChange = { if (it.length <= 4 && it.all(Char::isDigit)) delayText = it },
+            label = { Text("Auto Save delay (250–5000 ms)") },
+            singleLine = true
+        )
+        OutlinedButton(onClick = {
+            val delay = delayText.toIntOrNull()
+            if (delay != null && delay in 250..5_000) {
+                settings.setAutoSaveDelayMs(delay)
+                message = "Auto Save delay saved"
+            } else {
+                message = "Delay must be between 250 and 5000 ms"
+            }
+        }) { Text("Save Auto Save Delay") }
+
+        Text("Runtime Management", style = MaterialTheme.typography.titleMedium)
+        Text("Node.js: not connected — optional Termux connector requires approval")
+        Text("Python: not connected — optional Termux connector requires approval")
+        Text("SQLite: native Android SQLite available")
+
+        Text("Storage", style = MaterialTheme.typography.titleMedium)
+        Text("App storage used: ${formatBytes(storageBytes)}")
+        Text("Project directory: ${settings.projectDirectoryPath()}")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                val cleared = settings.clearCache()
+                val removed = settings.clearStaleImportDirectories()
+                storageBytes = settings.storageUsageBytes()
+                message = "Cache cleared; removed $removed stale import folder(s)"
+            }) { Text("Clean Cache / Temp") }
+            TextButton(onClick = { storageBytes = settings.storageUsageBytes() }) {
+                Text("Refresh Usage")
+            }
+        }
+
+        Text("App Information", style = MaterialTheme.typography.titleMedium)
+        Text("NovaRun Lite $versionName")
+        Text("Native Android • Minimum Android 10 (API 29)")
+        message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
     }
 }
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return String.format(java.util.Locale.US, "%.1f KB", kb)
+    return String.format(java.util.Locale.US, "%.2f MB", kb / 1024.0)
+}
+
