@@ -43,6 +43,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.novarun.lite.projects.ProjectStore
 import com.novarun.lite.projects.ProjectSummary
+import com.novarun.lite.files.ProjectFileEntry
+import com.novarun.lite.files.ProjectFileStore
 
 private val Navy = Color(0xFF101827)
 private val Blue = Color(0xFF4F8CFF)
@@ -197,6 +199,14 @@ private fun ProjectManagerScreen() {
         exportTarget = null
     }
 
+    if (openedProject != null) {
+        ProjectFilesScreen(
+            project = openedProject!!,
+            onBack = { openedProject = null }
+        )
+        return
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -308,6 +318,130 @@ private fun ProjectManagerScreen() {
                 }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
+        )
+    }
+}
+
+
+@Composable
+private fun ProjectFilesScreen(project: ProjectSummary, onBack: () -> Unit) {
+    val store = remember(project.directory.absolutePath) { ProjectFileStore(project.directory) }
+    var currentDirectory by remember(project.directory.absolutePath) { mutableStateOf("") }
+    var entries by remember(project.directory.absolutePath) { mutableStateOf(store.list()) }
+    var dialogMode by remember { mutableStateOf("none") }
+    var targetEntry by remember { mutableStateOf<ProjectFileEntry?>(null) }
+    var input by remember { mutableStateOf("") }
+    var selectedFile by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    fun refresh() { entries = store.list(currentDirectory) }
+    fun childPath(name: String): String =
+        if (currentDirectory.isEmpty()) name else "$currentDirectory/$name"
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onBack) { Text("‹ Projects") }
+            Text(project.name, style = MaterialTheme.typography.titleLarge)
+        }
+        Text(if (currentDirectory.isEmpty()) "/" else "/$currentDirectory")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { dialogMode = "new-file"; input = "" }) { Text("New File") }
+            OutlinedButton(onClick = { dialogMode = "new-folder"; input = "" }) { Text("New Folder") }
+        }
+        selectedFile?.let { Text("Selected: $it") }
+        message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(entries, key = { it.relativePath }) { entry ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            (if (entry.isDirectory) "▰ " else "▤ ") + entry.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(if (entry.isDirectory) "Folder" else "${entry.sizeBytes} bytes")
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            if (entry.isDirectory) {
+                                TextButton(onClick = { currentDirectory = entry.relativePath; refresh() }) {
+                                    Text("Open")
+                                }
+                            } else {
+                                TextButton(onClick = { selectedFile = entry.relativePath }) { Text("Select") }
+                                TextButton(onClick = {
+                                    targetEntry = entry
+                                    input = entry.name
+                                    dialogMode = "rename"
+                                }) { Text("Rename") }
+                                TextButton(onClick = {
+                                    targetEntry = entry
+                                    input = ""
+                                    dialogMode = "copy"
+                                }) { Text("Copy") }
+                                TextButton(onClick = {
+                                    targetEntry = entry
+                                    input = ""
+                                    dialogMode = "move"
+                                }) { Text("Move") }
+                            }
+                            TextButton(onClick = {
+                                runCatching { store.delete(entry.relativePath) }
+                                    .onSuccess { message = "Deleted ${entry.name}"; refresh() }
+                                    .onFailure { message = it.message ?: "Delete failed" }
+                            }) { Text("Delete") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (dialogMode != "none") {
+        val title = when (dialogMode) {
+            "new-file" -> "Create file"
+            "new-folder" -> "Create folder"
+            "rename" -> "Rename"
+            "copy" -> "Copy to path"
+            else -> "Move to path"
+        }
+        AlertDialog(
+            onDismissRequest = { dialogMode = "none" },
+            title = { Text(title) },
+            text = {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    label = { Text(if (dialogMode == "copy" || dialogMode == "move") "Destination path" else "Name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    runCatching {
+                        when (dialogMode) {
+                            "new-file" -> store.createFile(childPath(input))
+                            "new-folder" -> store.createFolder(childPath(input))
+                            "rename" -> store.rename(targetEntry!!.relativePath, input)
+                            "copy" -> store.copyFile(targetEntry!!.relativePath, input)
+                            "move" -> store.moveFile(targetEntry!!.relativePath, input)
+                        }
+                    }.onSuccess {
+                        message = "Operation completed"
+                        dialogMode = "none"
+                        refresh()
+                    }.onFailure {
+                        message = it.message ?: "File operation failed"
+                    }
+                }) { Text("Apply") }
+            },
+            dismissButton = {
+                TextButton(onClick = { dialogMode = "none" }) { Text("Cancel") }
+            }
         )
     }
 }
