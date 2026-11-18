@@ -45,6 +45,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -63,6 +64,7 @@ import com.novarun.lite.projects.ProjectStore
 import com.novarun.lite.projects.ProjectSummary
 import com.novarun.lite.files.ProjectFileEntry
 import com.novarun.lite.files.ProjectFileStore
+import com.novarun.lite.server.LocalHttpServer
 import kotlinx.coroutines.delay
 
 private val Navy = Color(0xFF101827)
@@ -80,6 +82,7 @@ private enum class MainTab(val label: String, val symbol: String) {
     HOME("Home", "⌂"),
     PROJECTS("Projects", "▣"),
     PREVIEW("Preview", "▷"),
+    SERVER("Server", "◉"),
     SETTINGS("Settings", "⚙")
 }
 
@@ -88,6 +91,10 @@ private fun NovaRunApp() {
     var selectedTab by remember { mutableStateOf(0) }
     var darkMode by remember { mutableStateOf(true) }
     val tabs = MainTab.entries
+    val serverController = remember { LocalServerController() }
+    DisposableEffect(serverController) {
+        onDispose { serverController.stop() }
+    }
     val colors = if (darkMode) darkColorScheme(
         primary = Blue,
         secondary = Purple,
@@ -120,10 +127,12 @@ private fun NovaRunApp() {
                 when (tabs[selectedTab]) {
                     MainTab.HOME -> HomeScreen(
                         onProjects = { selectedTab = 1 },
-                        onPreview = { selectedTab = 2 }
+                        onPreview = { selectedTab = 2 },
+                        onServer = { selectedTab = 3 }
                     )
                     MainTab.PROJECTS -> ProjectManagerScreen()
                     MainTab.PREVIEW -> ProjectPreviewScreen()
+                    MainTab.SERVER -> ServerDashboardScreen(serverController)
                     MainTab.SETTINGS -> SettingsScreen(
                         darkMode = darkMode,
                         onThemeChange = { darkMode = it }
@@ -135,7 +144,7 @@ private fun NovaRunApp() {
 }
 
 @Composable
-private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit) {
+private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit, onServer: () -> Unit) {
     val context = LocalContext.current
     val projects = remember { ProjectStore(context.applicationContext).listProjects() }
     Column(
@@ -168,6 +177,7 @@ private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit) {
             Button(onClick = onProjects, modifier = Modifier.weight(1f)) { Text("Projects") }
             OutlinedButton(onClick = onProjects, modifier = Modifier.weight(1f)) { Text("Import ZIP") }
             Button(onClick = onPreview, modifier = Modifier.weight(1f)) { Text("Preview") }
+            OutlinedButton(onClick = onServer, modifier = Modifier.weight(1f)) { Text("Server") }
         }
     }
 }
@@ -669,6 +679,113 @@ private class CodeSyntaxTransformation(private val extension: String) : VisualTr
     }
 }
 
+
+
+private class LocalServerController {
+    private var server: LocalHttpServer? = null
+
+    fun start(
+        project: ProjectSummary,
+        port: Int,
+        onLog: (String) -> Unit,
+        onState: (Boolean) -> Unit
+    ) {
+        check(server == null) { "Server is already active" }
+        val instance = LocalHttpServer(project.directory, port, onLog, onState)
+        server = instance
+        instance.start()
+    }
+
+    fun stop() {
+        server?.stop()
+        server = null
+    }
+}
+
+@Composable
+private fun ServerDashboardScreen(controller: LocalServerController) {
+    val context = LocalContext.current
+    val projects = remember { ProjectStore(context.applicationContext).listProjects() }
+    var selectedProject by remember { mutableStateOf(projects.firstOrNull()) }
+    var menuExpanded by remember { mutableStateOf(false) }
+    var portText by remember { mutableStateOf("8080") }
+    var running by remember { mutableStateOf(false) }
+    var starting by remember { mutableStateOf(false) }
+    val logs = remember { mutableStateListOf<String>() }
+
+    fun addLog(value: String) {
+        logs.add(0, value)
+        while (logs.size > 30) logs.removeAt(logs.lastIndex)
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text("Local Server", style = MaterialTheme.typography.headlineMedium)
+        androidx.compose.foundation.layout.Box {
+            OutlinedButton(onClick = { menuExpanded = true }) {
+                Text(selectedProject?.name ?: "Select project")
+            }
+            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                projects.forEach { project ->
+                    DropdownMenuItem(
+                        text = { Text(project.name) },
+                        onClick = { selectedProject = project; menuExpanded = false }
+                    )
+                }
+            }
+        }
+        OutlinedTextField(
+            value = portText,
+            onValueChange = { if (it.length <= 5 && it.all(Char::isDigit)) portText = it },
+            label = { Text("Port (1024–65535)") },
+            singleLine = true
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                enabled = !running && !starting && selectedProject != null,
+                onClick = {
+                    val port = portText.toIntOrNull()
+                    if (port == null || port !in 1024..65535) {
+                        addLog("Choose a port between 1024 and 65535")
+                    } else {
+                        starting = true
+                        runCatching {
+                            controller.start(
+                                selectedProject!!,
+                                port,
+                                ::addLog
+                            ) {
+                                running = it
+                                starting = false
+                            }
+                        }.onFailure {
+                            starting = false
+                            addLog(it.message ?: "Could not start server")
+                        }
+                    }
+                }
+            ) { Text(if (starting) "Starting…" else "Start") }
+            OutlinedButton(
+                enabled = running || starting,
+                onClick = {
+                    controller.stop()
+                    running = false
+                    starting = false
+                }
+            ) { Text("Stop") }
+        }
+        Text(if (running) "Status: Running" else "Status: Stopped")
+        if (running) Text("Local URL: http://127.0.0.1:$portText")
+        Text(
+            "M5 localhost only. LAN/Wi-Fi/Hotspot access is implemented separately in M6.",
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+        )
+        Text("Server Logs", style = MaterialTheme.typography.titleMedium)
+        logs.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+    }
+}
 
 @Composable
 private fun ProjectPreviewScreen() {
