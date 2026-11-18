@@ -11,6 +11,18 @@ class ZipPathSafetyTest {
     }
 
     @Test
+    fun acceptsDirectoryEntryWithTrailingSlash() {
+        assertEquals("assets/images", normalizeZipEntryPath("assets/images/"))
+    }
+
+    @Test
+    fun rejectsEmptySegments() {
+        assertThrows(IllegalArgumentException::class.java) {
+            normalizeZipEntryPath("assets//image.png")
+        }
+    }
+
+    @Test
     fun rejectsParentTraversal() {
         assertThrows(IllegalArgumentException::class.java) {
             normalizeZipEntryPath("../../outside.txt")
