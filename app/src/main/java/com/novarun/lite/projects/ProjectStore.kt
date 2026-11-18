@@ -216,6 +216,7 @@ class ProjectStore(context: Context) {
 
 internal fun normalizeZipEntryPath(rawPath: String): String {
     require(rawPath.isNotEmpty()) { "ZIP entry path is empty" }
+    require(rawPath.length <= 1_024) { "ZIP entry path is too long" }
     require(!rawPath.startsWith('/') && !rawPath.startsWith('\\')) {
         "Absolute ZIP paths are not allowed"
     }
@@ -227,6 +228,7 @@ internal fun normalizeZipEntryPath(rawPath: String): String {
     val trimmed = rawPath.removeSuffix("/")
     require(trimmed.isNotEmpty()) { "ZIP entry path is empty" }
     val parts = trimmed.split('/')
+    require(parts.size <= 32) { "ZIP entry path is nested too deeply" }
     require(parts.none { it.isEmpty() || it == "." || it == ".." }) {
         "ZIP path contains an unsafe segment"
     }
