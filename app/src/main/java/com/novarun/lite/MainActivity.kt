@@ -1313,7 +1313,12 @@ private fun SettingsScreen(
     var autoSave by remember { mutableStateOf(settings.autoSaveEnabled()) }
     var delayText by remember { mutableStateOf(settings.autoSaveDelayMs().toString()) }
     var lanAccess by remember { mutableStateOf(settings.lanAccessEnabled()) }
-    var storageBytes by remember { mutableStateOf(settings.storageUsageBytes()) }
+    var storageBytes by remember { mutableStateOf(0L) }
+    var maintenanceBusy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(settings) {
+        storageBytes = withContext(Dispatchers.IO) { settings.storageUsageBytes() }
+    }
     var message by remember { mutableStateOf<String?>(null) }
     val versionName = remember {
         runCatching {
@@ -1394,15 +1399,34 @@ private fun SettingsScreen(
         Text("App storage used: ${formatBytes(storageBytes)}")
         Text("Project directory: ${settings.projectDirectoryPath()}")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                val cleared = settings.clearCache()
-                val removed = settings.clearStaleImportDirectories()
-                storageBytes = settings.storageUsageBytes()
-                message = "Cache cleared; removed $removed stale import folder(s)"
-            }) { Text("Clean Cache / Temp") }
-            TextButton(onClick = { storageBytes = settings.storageUsageBytes() }) {
-                Text("Refresh Usage")
-            }
+            OutlinedButton(
+                enabled = !maintenanceBusy,
+                onClick = {
+                    maintenanceBusy = true
+                    scope.launch {
+                        val outcome = withContext(Dispatchers.IO) {
+                            val cleared = settings.clearCache()
+                            val removed = settings.clearStaleImportDirectories()
+                            Triple(cleared, removed, settings.storageUsageBytes())
+                        }
+                        storageBytes = outcome.third
+                        message = if (outcome.first) {
+                            "Cache cleared; removed ${outcome.second} stale import folder(s)"
+                        } else {
+                            "Some cache files could not be removed"
+                        }
+                        maintenanceBusy = false
+                    }
+                }
+            ) { Text(if (maintenanceBusy) "Cleaning…" else "Clean Cache / Temp") }
+            TextButton(
+                enabled = !maintenanceBusy,
+                onClick = {
+                    scope.launch {
+                        storageBytes = withContext(Dispatchers.IO) { settings.storageUsageBytes() }
+                    }
+                }
+            ) { Text("Refresh Usage") }
         }
 
         Text("App Information", style = MaterialTheme.typography.titleMedium)
