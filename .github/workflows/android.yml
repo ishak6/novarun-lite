@@ -42,6 +42,15 @@ jobs:
         run: gradle :app:assembleDebug
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest
+      - name: Run Android instrumentation tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: gradle :app:connectedDebugAndroidTest
       - name: Build minified release APK
         run: gradle :app:assembleRelease
       - name: Sign QA APK with ephemeral debug key
