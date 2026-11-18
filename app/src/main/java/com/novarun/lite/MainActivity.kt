@@ -2,6 +2,11 @@ package com.novarun.lite
 
 import android.net.Uri
 import android.os.Bundle
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -18,6 +23,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +58,7 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.novarun.lite.projects.ProjectStore
 import com.novarun.lite.projects.ProjectSummary
 import com.novarun.lite.files.ProjectFileEntry
@@ -114,10 +123,7 @@ private fun NovaRunApp() {
                         onPreview = { selectedTab = 2 }
                     )
                     MainTab.PROJECTS -> ProjectManagerScreen()
-                    MainTab.PREVIEW -> PlaceholderScreen(
-                        title = "Live Preview",
-                        detail = "HTML, CSS and JavaScript preview is scheduled for M4."
-                    )
+                    MainTab.PREVIEW -> ProjectPreviewScreen()
                     MainTab.SETTINGS -> SettingsScreen(
                         darkMode = darkMode,
                         onThemeChange = { darkMode = it }
@@ -661,6 +667,194 @@ private class CodeSyntaxTransformation(private val extension: String) : VisualTr
         }
         return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
+}
+
+
+@Composable
+private fun ProjectPreviewScreen() {
+    val context = LocalContext.current
+    val projects = remember { ProjectStore(context.applicationContext).listProjects() }
+    var selectedProject by remember { mutableStateOf(projects.firstOrNull()) }
+    var menuExpanded by remember { mutableStateOf(false) }
+    var htmlPath by remember(selectedProject?.directory?.absolutePath) { mutableStateOf("index.html") }
+    var javaScriptEnabled by remember { mutableStateOf(true) }
+    var refreshKey by remember { mutableStateOf(0) }
+    var previewError by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text("Live Preview", style = MaterialTheme.typography.headlineMedium)
+        androidx.compose.foundation.layout.Box {
+            OutlinedButton(onClick = { menuExpanded = true }) {
+                Text(selectedProject?.name ?: "Select project")
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false }
+            ) {
+                projects.forEach { project ->
+                    DropdownMenuItem(
+                        text = { Text(project.name) },
+                        onClick = {
+                            selectedProject = project
+                            menuExpanded = false
+                            previewError = null
+                        }
+                    )
+                }
+            }
+        }
+        OutlinedTextField(
+            value = htmlPath,
+            onValueChange = { htmlPath = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("HTML file path") },
+            singleLine = true
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { refreshKey++; previewError = null }, enabled = selectedProject != null) {
+                Text("Refresh")
+            }
+            Text("JavaScript")
+            Switch(checked = javaScriptEnabled, onCheckedChange = { javaScriptEnabled = it })
+        }
+        previewError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        val activeProject = selectedProject
+        if (activeProject == null) {
+            Text("Create or import a project before previewing.")
+        } else {
+            ProjectPreviewWebView(
+                project = activeProject,
+                htmlPath = htmlPath,
+                javaScriptEnabled = javaScriptEnabled,
+                refreshKey = refreshKey,
+                onError = { previewError = it },
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProjectPreviewWebView(
+    project: ProjectSummary,
+    htmlPath: String,
+    javaScriptEnabled: Boolean,
+    refreshKey: Int,
+    onError: (String?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val store = remember(project.directory.absolutePath) { ProjectFileStore(project.directory) }
+    val webView = remember(project.directory.absolutePath) {
+        WebView(context).apply {
+            settings.javaScriptEnabled = true
+            settings.allowFileAccess = false
+            settings.allowContentAccess = false
+            settings.domStorageEnabled = false
+            settings.databaseEnabled = false
+            settings.javaScriptCanOpenWindowsAutomatically = false
+            settings.setSupportMultipleWindows(false)
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            settings.cacheMode = WebSettings.LOAD_NO_CACHE
+            settings.setSafeBrowsingEnabled(true)
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView,
+                    request: WebResourceRequest
+                ): WebResourceResponse {
+                    val uri = request.url
+                    if (uri.host != PREVIEW_HOST) {
+                        return blockedResponse()
+                    }
+                    val path = uri.path.orEmpty().removePrefix("/").ifBlank { "index.html" }
+                    return runCatching {
+                        val mime = previewMimeType(path)
+                        val encoding = if (mime.startsWith("text/") ||
+                            mime == "application/javascript" || mime == "application/json"
+                        ) "UTF-8" else null
+                        WebResourceResponse(mime, encoding, store.openInputStream(path))
+                    }.getOrElse {
+                        WebResourceResponse(
+                            "text/plain",
+                            "UTF-8",
+                            404,
+                            "Not Found",
+                            emptyMap(),
+                            java.io.ByteArrayInputStream("Preview file not found".toByteArray())
+                        )
+                    }
+                }
+
+                override fun shouldOverrideUrlLoading(
+                    view: WebView,
+                    request: WebResourceRequest
+                ): Boolean = request.url.host != PREVIEW_HOST
+
+                override fun onReceivedError(
+                    view: WebView,
+                    request: WebResourceRequest,
+                    error: android.webkit.WebResourceError
+                ) {
+                    if (request.isForMainFrame) onError(error.description?.toString() ?: "Preview load failed")
+                }
+
+                override fun onPageFinished(view: WebView, url: String) {
+                    onError(null)
+                }
+            }
+        }
+    }
+
+    DisposableEffect(webView) {
+        onDispose {
+            webView.stopLoading()
+            webView.destroy()
+        }
+    }
+
+    AndroidView(
+        factory = { webView },
+        modifier = modifier,
+        update = { view ->
+            view.settings.javaScriptEnabled = javaScriptEnabled
+            val cleanPath = htmlPath.trim().ifBlank { "index.html" }
+            val loadKey = "${project.directory.absolutePath}|$cleanPath|$refreshKey|$javaScriptEnabled"
+            if (view.tag != loadKey) {
+                view.tag = loadKey
+                onError(null)
+                view.loadUrl("https://$PREVIEW_HOST/${Uri.encode(cleanPath, "/")}")
+            }
+        }
+    )
+}
+
+private const val PREVIEW_HOST = "novarun.local"
+
+private fun blockedResponse() = WebResourceResponse(
+    "text/plain",
+    "UTF-8",
+    403,
+    "Blocked",
+    emptyMap(),
+    java.io.ByteArrayInputStream("External requests are blocked in preview".toByteArray())
+)
+
+private fun previewMimeType(path: String): String = when (path.substringAfterLast('.', "").lowercase()) {
+    "html", "htm" -> "text/html"
+    "css" -> "text/css"
+    "js", "mjs" -> "application/javascript"
+    "json" -> "application/json"
+    "txt", "md" -> "text/plain"
+    "svg" -> "image/svg+xml"
+    "png" -> "image/png"
+    "jpg", "jpeg" -> "image/jpeg"
+    "gif" -> "image/gif"
+    "webp" -> "image/webp"
+    "ico" -> "image/x-icon"
+    else -> "application/octet-stream"
 }
 
 @Composable
