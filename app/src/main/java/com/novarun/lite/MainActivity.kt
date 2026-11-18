@@ -111,6 +111,7 @@ private enum class MainTab(val label: String, val symbol: String) {
 @Composable
 private fun NovaRunApp() {
     var selectedTab by remember { mutableStateOf(0) }
+    var previewFullscreen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val settingsStore = remember(context) { AppSettingsStore(context.applicationContext) }
     var themeMode by remember { mutableStateOf(settingsStore.themeMode()) }
@@ -134,7 +135,7 @@ private fun NovaRunApp() {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
-                NavigationBar {
+                if (!previewFullscreen) NavigationBar {
                     tabs.forEachIndexed { index, tab ->
                         NavigationBarItem(
                             selected = selectedTab == index,
@@ -157,7 +158,10 @@ private fun NovaRunApp() {
                         onServer = { selectedTab = 3 }
                     )
                     MainTab.PROJECTS -> ProjectManagerScreen()
-                    MainTab.PREVIEW -> ProjectPreviewScreen()
+                    MainTab.PREVIEW -> ProjectPreviewScreen(
+                        fullscreen = previewFullscreen,
+                        onFullscreenChange = { previewFullscreen = it }
+                    )
                     MainTab.SERVER -> ServerDashboardScreen(serverController, settingsStore)
                     MainTab.SETTINGS -> SettingsScreen(
                         settings = settingsStore,
@@ -1003,7 +1007,10 @@ private fun ProjectDatabaseScreen(project: ProjectSummary, onBack: () -> Unit) {
 }
 
 @Composable
-private fun ProjectPreviewScreen() {
+private fun ProjectPreviewScreen(
+    fullscreen: Boolean,
+    onFullscreenChange: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val projects = remember { ProjectStore(context.applicationContext).listProjects() }
     var selectedProject by remember { mutableStateOf(projects.firstOrNull()) }
@@ -1013,46 +1020,58 @@ private fun ProjectPreviewScreen() {
     var refreshKey by remember { mutableStateOf(0) }
     var previewError by remember { mutableStateOf<String?>(null) }
 
+    BackHandler(enabled = fullscreen) { onFullscreenChange(false) }
     Column(
-        modifier = Modifier.fillMaxSize().padding(12.dp),
+        modifier = Modifier.fillMaxSize().padding(if (fullscreen) 4.dp else 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("Live Preview", style = MaterialTheme.typography.headlineMedium)
-        androidx.compose.foundation.layout.Box {
-            OutlinedButton(onClick = { menuExpanded = true }) {
-                Text(selectedProject?.name ?: "Select project")
-            }
-            DropdownMenu(
-                expanded = menuExpanded,
-                onDismissRequest = { menuExpanded = false }
-            ) {
-                projects.forEach { project ->
-                    DropdownMenuItem(
-                        text = { Text(project.name) },
-                        onClick = {
-                            selectedProject = project
-                            menuExpanded = false
-                            previewError = null
-                        }
-                    )
+        if (!fullscreen) {
+            Text("Live Preview", style = MaterialTheme.typography.headlineMedium)
+            androidx.compose.foundation.layout.Box {
+                OutlinedButton(onClick = { menuExpanded = true }) {
+                    Text(selectedProject?.name ?: "Select project")
+                }
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    projects.forEach { project ->
+                        DropdownMenuItem(
+                            text = { Text(project.name) },
+                            onClick = {
+                                selectedProject = project
+                                menuExpanded = false
+                                previewError = null
+                            }
+                        )
+                    }
                 }
             }
-        }
-        OutlinedTextField(
-            value = htmlPath,
-            onValueChange = { htmlPath = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("HTML file path") },
-            singleLine = true
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { refreshKey++; previewError = null }, enabled = selectedProject != null) {
-                Text("Refresh")
+            OutlinedTextField(
+                value = htmlPath,
+                onValueChange = { htmlPath = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("HTML file path") },
+                singleLine = true
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { refreshKey++; previewError = null }, enabled = selectedProject != null) {
+                    Text("Refresh")
+                }
+                OutlinedButton(onClick = { onFullscreenChange(true) }, enabled = selectedProject != null) {
+                    Text("Fullscreen")
+                }
+                Text("JavaScript")
+                Switch(checked = javaScriptEnabled, onCheckedChange = { javaScriptEnabled = it })
             }
-            Text("JavaScript")
-            Switch(checked = javaScriptEnabled, onCheckedChange = { javaScriptEnabled = it })
+            previewError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { onFullscreenChange(false) }) { Text("Exit Fullscreen") }
+                Button(onClick = { refreshKey++; previewError = null }) { Text("Refresh") }
+            }
+            previewError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
-        previewError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         val activeProject = selectedProject
         if (activeProject == null) {
             Text("Create or import a project before previewing.")
