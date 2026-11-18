@@ -120,6 +120,8 @@ private fun NovaRunApp() {
 
 @Composable
 private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit) {
+    val context = LocalContext.current
+    val projects = remember { ProjectStore(context.applicationContext).listProjects() }
     Column(
         modifier = Modifier.fillMaxSize().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -136,13 +138,19 @@ private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit) {
             Column(Modifier.padding(18.dp)) {
                 Text("Workspace", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
-                Text("Project manager: available")
+                Text("Projects: ${projects.size}")
                 Text("Server: stopped")
-                Text("Open Projects to create or import a project.")
+                if (projects.isEmpty()) {
+                    Text("No recent projects yet.")
+                } else {
+                    Text("Recent projects", style = MaterialTheme.typography.labelLarge)
+                    projects.take(3).forEach { Text("• ${it.name}") }
+                }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = onProjects, modifier = Modifier.weight(1f)) { Text("Projects") }
+            OutlinedButton(onClick = onProjects, modifier = Modifier.weight(1f)) { Text("Import ZIP") }
             Button(onClick = onPreview, modifier = Modifier.weight(1f)) { Text("Preview") }
         }
     }
