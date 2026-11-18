@@ -39,6 +39,7 @@ class ProjectDatabaseStore(projectDirectory: File) : AutoCloseable {
         return if (isQuery) {
             database.rawQuery(statement, null).use { cursor ->
                 val columns = cursor.columnNames.toList()
+                require(columns.size <= MAX_COLUMNS) { "Query returned too many columns" }
                 val rows = ArrayList<List<String?>>()
                 var truncated = false
                 while (cursor.moveToNext()) {
@@ -47,7 +48,10 @@ class ProjectDatabaseStore(projectDirectory: File) : AutoCloseable {
                         break
                     }
                     rows += columns.indices.map { index ->
-                        if (cursor.isNull(index)) null else cursor.getString(index)
+                        if (cursor.isNull(index)) null else {
+                            val value = cursor.getString(index)
+                            if (value.length > MAX_CELL_CHARS) value.take(MAX_CELL_CHARS) + "…" else value
+                        }
                     }
                 }
                 SqlQueryResult(columns, rows, truncated, "Query returned ${rows.size} row(s)")
@@ -66,5 +70,7 @@ class ProjectDatabaseStore(projectDirectory: File) : AutoCloseable {
         const val DATABASE_NAME = "novarun.sqlite"
         private const val MAX_SQL_LENGTH = 100_000
         private const val MAX_ROWS = 1_000
+        private const val MAX_COLUMNS = 100
+        private const val MAX_CELL_CHARS = 4_000
     }
 }
