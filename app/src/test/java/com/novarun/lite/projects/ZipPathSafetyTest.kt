@@ -23,6 +23,14 @@ class ZipPathSafetyTest {
     }
 
     @Test
+    fun rejectsExcessivePathDepth() {
+        val deeplyNested = (1..33).joinToString("/") { "d$it" } + "/file.txt"
+        assertThrows(IllegalArgumentException::class.java) {
+            normalizeZipEntryPath(deeplyNested)
+        }
+    }
+
+    @Test
     fun rejectsParentTraversal() {
         assertThrows(IllegalArgumentException::class.java) {
             normalizeZipEntryPath("../../outside.txt")
