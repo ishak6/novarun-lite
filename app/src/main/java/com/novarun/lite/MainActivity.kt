@@ -844,6 +844,9 @@ private fun ServerDashboardScreen(controller: LocalServerController, settings: A
         projects = withContext(Dispatchers.IO) { projectStore.listProjects() }
     }
     var selectedProject by remember { mutableStateOf(projects.firstOrNull()) }
+    LaunchedEffect(projects) {
+        if (selectedProject == null) selectedProject = projects.firstOrNull()
+    }
     var menuExpanded by remember { mutableStateOf(false) }
     var portText by remember { mutableStateOf(settings.defaultPort().toString()) }
     var running by remember { mutableStateOf(LocalServerService.isRunning) }
