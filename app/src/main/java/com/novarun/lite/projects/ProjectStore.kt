@@ -46,8 +46,8 @@ class ProjectStore(context: Context) {
         val name = validateProjectName(rawName)
         val target = uniqueDirectory(name)
         check(target.mkdir()) { "Could not create project directory" }
-        writeMetadata(target, name)
-        return summarize(target, name)
+        writeMetadata(target, target.name)
+        return summarize(target, target.name)
     }
 
     @Synchronized
@@ -115,10 +115,10 @@ class ProjectStore(context: Context) {
             }
             require(entryCount > 0) { "ZIP archive is empty" }
             val destination = uniqueDirectory(baseName)
-            writeMetadata(temporary, baseName)
+            writeMetadata(temporary, destination.name)
             check(temporary.renameTo(destination)) { "Could not finalize imported project" }
             committed = true
-            return summarize(destination, baseName)
+            return summarize(destination, destination.name)
         } finally {
             if (!committed) temporary.deleteRecursively()
         }
