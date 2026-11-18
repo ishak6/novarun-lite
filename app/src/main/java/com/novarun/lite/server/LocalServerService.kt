@@ -46,6 +46,10 @@ class LocalServerService : Service() {
             if (!stopped) {
                 stopping = false
                 sendLog("Previous server has not stopped yet; restart cancelled")
+                isRunning = false
+                sendState(false)
+                ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                stopSelf()
                 return false
             }
             localServer = null
@@ -58,6 +62,9 @@ class LocalServerService : Service() {
 
         if (projectPath.isNullOrBlank() || !File(projectPath).isDirectory || port !in 1024..65535) {
             sendLog("Invalid server start configuration")
+            isRunning = false
+            sendState(false)
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
             return false
         }
