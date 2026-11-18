@@ -905,7 +905,11 @@ private fun ServerDashboardScreen(controller: LocalServerController, settings: A
             Text("LAN / Wi-Fi / Hotspot")
             Switch(
                 checked = lanEnabled,
-                onCheckedChange = { lanEnabled = it; accessToken = "" },
+                onCheckedChange = {
+                    lanEnabled = it
+                    settings.setLanAccessEnabled(it)
+                    accessToken = ""
+                },
                 enabled = !running && !starting
             )
             TextButton(onClick = { lanAddress = findLanIpv4Address() }, enabled = !running) {
@@ -932,6 +936,28 @@ private fun ServerDashboardScreen(controller: LocalServerController, settings: A
                     }
                 }
             ) { Text(if (starting) "Starting…" else "Start") }
+            OutlinedButton(
+                enabled = running && !starting && selectedProject != null,
+                onClick = {
+                    val port = portText.toIntOrNull()
+                    val bindAddress = if (lanEnabled) lanAddress else "127.0.0.1"
+                    if (port == null || port !in 1024..65535 || bindAddress == null) {
+                        addLog("Check port and network address before restarting")
+                    } else {
+                        val token = if (lanEnabled) accessToken.ifBlank { generateAccessToken() } else null
+                        accessToken = token.orEmpty()
+                        if (token == null) tokenStore.clear() else tokenStore.save(token)
+                        settings.setDefaultPort(port)
+                        starting = true
+                        runCatching {
+                            controller.restart(selectedProject!!, port, bindAddress, token)
+                        }.onFailure {
+                            starting = false
+                            addLog(it.message ?: "Could not restart server")
+                        }
+                    }
+                }
+            ) { Text("Restart") }
             OutlinedButton(
                 enabled = running || starting,
                 onClick = {
