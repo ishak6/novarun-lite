@@ -184,7 +184,11 @@ private fun NovaRunApp() {
 @Composable
 private fun HomeScreen(onProjects: () -> Unit, onPreview: () -> Unit, onServer: () -> Unit) {
     val context = LocalContext.current
-    val projects = remember { ProjectStore(context.applicationContext).listProjects() }
+    val projectStore = remember(context) { ProjectStore(context.applicationContext) }
+    var projects by remember { mutableStateOf(emptyList<ProjectSummary>()) }
+    LaunchedEffect(projectStore) {
+        projects = withContext(Dispatchers.IO) { projectStore.listProjects() }
+    }
     Column(
         modifier = Modifier.fillMaxSize().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -229,7 +233,7 @@ private fun ProjectManagerScreen() {
     val context = LocalContext.current
     val store = remember { ProjectStore(context.applicationContext) }
     val scope = rememberCoroutineScope()
-    var projects by remember { mutableStateOf(store.listProjects()) }
+    var projects by remember { mutableStateOf(emptyList<ProjectSummary>()) }
     var projectName by remember { mutableStateOf("") }
     var renameTarget by remember { mutableStateOf<ProjectSummary?>(null) }
     var deleteTarget by remember { mutableStateOf<ProjectSummary?>(null) }
@@ -240,7 +244,12 @@ private fun ProjectManagerScreen() {
     var searchQuery by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
 
-    fun refresh() { projects = store.listProjects() }
+    LaunchedEffect(store) {
+        projects = withContext(Dispatchers.IO) { store.listProjects() }
+    }
+    fun refresh() {
+        scope.launch { projects = withContext(Dispatchers.IO) { store.listProjects() } }
+    }
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -829,7 +838,11 @@ private class LocalServerController(private val context: Context) {
 @Composable
 private fun ServerDashboardScreen(controller: LocalServerController, settings: AppSettingsStore) {
     val context = LocalContext.current
-    val projects = remember { ProjectStore(context.applicationContext).listProjects() }
+    val projectStore = remember(context) { ProjectStore(context.applicationContext) }
+    var projects by remember { mutableStateOf(emptyList<ProjectSummary>()) }
+    LaunchedEffect(projectStore) {
+        projects = withContext(Dispatchers.IO) { projectStore.listProjects() }
+    }
     var selectedProject by remember { mutableStateOf(projects.firstOrNull()) }
     var menuExpanded by remember { mutableStateOf(false) }
     var portText by remember { mutableStateOf(settings.defaultPort().toString()) }
@@ -1086,7 +1099,11 @@ private fun ProjectPreviewScreen(
     onFullscreenChange: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
-    val projects = remember { ProjectStore(context.applicationContext).listProjects() }
+    val projectStore = remember(context) { ProjectStore(context.applicationContext) }
+    var projects by remember { mutableStateOf(emptyList<ProjectSummary>()) }
+    LaunchedEffect(projectStore) {
+        projects = withContext(Dispatchers.IO) { projectStore.listProjects() }
+    }
     var selectedProject by remember { mutableStateOf(projects.firstOrNull()) }
     var menuExpanded by remember { mutableStateOf(false) }
     var htmlPath by remember(selectedProject?.directory?.absolutePath) { mutableStateOf("index.html") }
