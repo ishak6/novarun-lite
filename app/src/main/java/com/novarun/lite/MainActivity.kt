@@ -11,8 +11,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -745,7 +743,6 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
     val tokenStore = remember(context) { SecureTokenStore(context.applicationContext) }
     var accessToken by remember { mutableStateOf(tokenStore.load().orEmpty()) }
     val logs = remember { mutableStateListOf<String>() }
-    val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     fun addLog(value: String) {
         logs.add(0, value)
