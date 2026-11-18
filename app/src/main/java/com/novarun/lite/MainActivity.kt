@@ -594,15 +594,15 @@ private fun CodeEditorScreen(
         showDiscardDialog = true
     }
 
-    fun saveNow() {
-        runCatching { store.writeTextAtomic(relativePath, content) }
-            .onSuccess {
-                savedContent = content
-                saveMessage = "Saved"
-            }
-            .onFailure {
-                saveMessage = it.message ?: "Save failed"
-            }
+    fun saveNow(): Boolean {
+        val result = runCatching { store.writeTextAtomic(relativePath, content) }
+        result.onSuccess {
+            savedContent = content
+            saveMessage = "Saved"
+        }.onFailure {
+            saveMessage = it.message ?: "Save failed"
+        }
+        return result.isSuccess
     }
 
     LaunchedEffect(content, autoSave, relativePath) {
@@ -675,8 +675,7 @@ private fun CodeEditorScreen(
             text = { Text("Save your changes before leaving this file?") },
             confirmButton = {
                 TextButton(onClick = {
-                    saveNow()
-                    if (loadError == null) {
+                    if (saveNow()) {
                         showDiscardDialog = false
                         onBack()
                     }
