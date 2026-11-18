@@ -18,8 +18,8 @@ Status values: NOT_STARTED, IN_PROGRESS, IMPLEMENTED, VERIFIED, BLOCKED (with re
 - [ ] R8, resource shrinking, lazy loading, minimal animation/dependencies, system fonts, memory/CPU/cache/startup optimization.
 
 ## Milestones and exit evidence
-- [ ] M0: Android Gradle project, Compose shell/theme/navigation, CI workflow; debug build and unit test.
-- [ ] M1: Project manager and ZIP import/extraction; traversal/size/entry-count tests.
+- [x] M0 source foundation: Android Gradle project, Compose shell/theme/navigation, CI workflow and smoke-test source added. Build/test verification is still in progress.
+- [x] M1 initial implementation: project create/open/rename/delete/search, ZIP import/extract, backup export, metadata and ZIP path safety tests added. Runtime verification and remaining edge cases are still in progress.
 - [ ] M2: File manager and project-root-confined file operations; path/symlink tests.
 - [ ] M3: Editor, save/autosave and search; persistence and editor-state tests.
 - [ ] M4: HTML/CSS/JS preview; refresh, fullscreen, JS toggle and error tests.
@@ -43,4 +43,5 @@ All values require measurement on a stated device/build configuration; no target
 ## Evidence log
 | Milestone | Commit | CI run | Tests | Status |
 |---|---|---|---|---|
-| M0 | — | — | — | IN_PROGRESS |
+| M0 | a0139e99fef4883e6712a9851f274532506f425d | CI runs 44320981426 / 44321172131 (older runs failed before Gradle) | Smoke test added; latest build pending | IN_PROGRESS |
+| M1 | 9cdc633f07b0afd7ba28adedf257772b4ef6c168 | CI run 44321190952 queued | ZIP path tests added; not yet executed | IN_PROGRESS |
