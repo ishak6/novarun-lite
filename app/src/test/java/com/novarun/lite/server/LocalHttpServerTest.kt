@@ -26,14 +26,14 @@ class LocalHttpServerTest {
             assertTrue("server should start", started.await(5, TimeUnit.SECONDS))
             Socket("127.0.0.1", port).use { client ->
                 client.getOutputStream().write(
-                    "GET / HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n".toByteArray()
+                    "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray()
                 )
                 val response = client.getInputStream().bufferedReader().readText()
                 assertTrue(response.contains("401 Unauthorized"))
             }
             Socket("127.0.0.1", port).use { client ->
                 client.getOutputStream().write(
-                    "GET / HTTP/1.1\\r\\nHost: localhost\\r\\nAuthorization: Bearer test-secret-token\\r\\nConnection: close\\r\\n\\r\\n".toByteArray()
+                    "GET / HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-secret-token\r\nConnection: close\r\n\r\n".toByteArray()
                 )
                 val response = client.getInputStream().bufferedReader().readText()
                 assertTrue(response.contains("200 OK"))
