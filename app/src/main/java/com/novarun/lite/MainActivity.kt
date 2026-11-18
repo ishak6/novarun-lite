@@ -519,9 +519,9 @@ private fun CodeEditorScreen(
     onBack: () -> Unit
 ) {
     val store = remember(project.directory.absolutePath) { ProjectFileStore(project.directory) }
-    var content by remember(relativePath) {
-        mutableStateOf(runCatching { store.readText(relativePath) }.getOrDefault(""))
-    }
+    val initialContent = remember(relativePath) { runCatching { store.readText(relativePath) } }
+    val loadError = initialContent.exceptionOrNull()?.message
+    var content by remember(relativePath) { mutableStateOf(initialContent.getOrDefault("")) }
     var savedContent by remember(relativePath) { mutableStateOf(content) }
     var autoSave by remember { mutableStateOf(true) }
     var saveMessage by remember { mutableStateOf("Loaded") }
@@ -544,7 +544,7 @@ private fun CodeEditorScreen(
     }
 
     LaunchedEffect(content, autoSave, relativePath) {
-        if (autoSave && content != savedContent) {
+        if (loadError == null && autoSave && content != savedContent) {
             delay(900)
             runCatching { store.writeTextAtomic(relativePath, content) }
                 .onSuccess {
@@ -565,8 +565,9 @@ private fun CodeEditorScreen(
             TextButton(onClick = onBack) { Text("‹ Files") }
             Text(relativePath, style = MaterialTheme.typography.titleMedium)
         }
+        loadError?.let { Text("Cannot edit this file: $it", color = MaterialTheme.colorScheme.error) }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Button(onClick = { saveNow() }) { Text("Save") }
+            Button(onClick = { saveNow() }, enabled = loadError == null) { Text("Save") }
             OutlinedButton(onClick = { showFind = true }) { Text("Find / Replace") }
             Text(if (content == savedContent) "Saved" else "Unsaved")
         }
@@ -590,6 +591,7 @@ private fun CodeEditorScreen(
             OutlinedTextField(
                 value = content,
                 onValueChange = { content = it },
+                enabled = loadError == null,
                 modifier = Modifier.weight(1f).fillMaxSize(),
                 textStyle = TextStyle(fontFamily = FontFamily.Monospace),
                 visualTransformation = syntax,
