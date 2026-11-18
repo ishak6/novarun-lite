@@ -770,8 +770,22 @@ private fun generateAccessToken(): String {
 
 private class LocalServerController(private val context: Context) {
     fun start(project: ProjectSummary, port: Int, bindAddress: String, authToken: String?) {
+        launchServerAction(LocalServerService.ACTION_START, project, port, bindAddress, authToken)
+    }
+
+    fun restart(project: ProjectSummary, port: Int, bindAddress: String, authToken: String?) {
+        launchServerAction(LocalServerService.ACTION_RESTART, project, port, bindAddress, authToken)
+    }
+
+    private fun launchServerAction(
+        action: String,
+        project: ProjectSummary,
+        port: Int,
+        bindAddress: String,
+        authToken: String?
+    ) {
         val intent = Intent(context, LocalServerService::class.java)
-            .setAction(LocalServerService.ACTION_START)
+            .setAction(action)
             .putExtra(LocalServerService.EXTRA_PROJECT_PATH, project.directory.absolutePath)
             .putExtra(LocalServerService.EXTRA_PORT, port)
             .putExtra(LocalServerService.EXTRA_BIND_ADDRESS, bindAddress)
