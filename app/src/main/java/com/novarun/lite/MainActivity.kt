@@ -201,7 +201,7 @@ private fun ProjectManagerScreen() {
     ) {
         Text("Projects", style = MaterialTheme.typography.headlineMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { projectName = "My Project" }) { Text("New Project") }
+            Button(onClick = { renameTarget = null; projectName = "My Project" }) { Text("New Project") }
             OutlinedButton(onClick = {
                 importLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
             }) { Text("Import ZIP") }
@@ -240,7 +240,7 @@ private fun ProjectManagerScreen() {
 
     if (projectName.isNotEmpty()) {
         AlertDialog(
-            onDismissRequest = { projectName = "" },
+            onDismissRequest = { projectName = ""; renameTarget = null },
             title = { Text(if (renameTarget == null) "Create project" else "Rename project") },
             text = {
                 OutlinedTextField(
