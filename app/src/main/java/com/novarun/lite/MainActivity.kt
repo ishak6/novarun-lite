@@ -1,10 +1,16 @@
 package com.novarun.lite
 
+import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebResourceRequest
@@ -16,6 +22,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -71,7 +78,7 @@ import com.novarun.lite.files.ProjectFileEntry
 import com.novarun.lite.files.ProjectFileStore
 import com.novarun.lite.database.ProjectDatabaseStore
 import com.novarun.lite.database.SqlQueryResult
-import com.novarun.lite.server.LocalHttpServer
+import com.novarun.lite.server.LocalServerService
 import com.novarun.lite.server.findLanIpv4Address
 import kotlinx.coroutines.delay
 import java.security.SecureRandom
@@ -101,10 +108,8 @@ private fun NovaRunApp() {
     var selectedTab by remember { mutableStateOf(0) }
     var darkMode by remember { mutableStateOf(true) }
     val tabs = MainTab.entries
-    val serverController = remember { LocalServerController() }
-    DisposableEffect(serverController) {
-        onDispose { serverController.stop() }
-    }
+    val context = LocalContext.current
+    val serverController = remember(context) { LocalServerController(context.applicationContext) }
     val colors = if (darkMode) darkColorScheme(
         primary = Blue,
         secondary = Purple,
@@ -706,38 +711,22 @@ private fun generateAccessToken(): String {
     return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 }
 
-private class LocalServerController {
-    private var server: LocalHttpServer? = null
-
-    fun start(
-        project: ProjectSummary,
-        port: Int,
-        bindAddress: String,
-        authToken: String?,
-        onLog: (String) -> Unit,
-        onState: (Boolean) -> Unit
-    ) {
-        check(server == null) { "Server is already active" }
-        var created: LocalHttpServer? = null
-        val instance = LocalHttpServer(
-            project.directory,
-            port,
-            onLog,
-            { isRunning ->
-                if (!isRunning && server === created) server = null
-                onState(isRunning)
-            },
-            bindAddress,
-            authToken
-        )
-        created = instance
-        server = instance
-        instance.start()
+private class LocalServerController(private val context: Context) {
+    fun start(project: ProjectSummary, port: Int, bindAddress: String, authToken: String?) {
+        val intent = Intent(context, LocalServerService::class.java)
+            .setAction(LocalServerService.ACTION_START)
+            .putExtra(LocalServerService.EXTRA_PROJECT_PATH, project.directory.absolutePath)
+            .putExtra(LocalServerService.EXTRA_PORT, port)
+            .putExtra(LocalServerService.EXTRA_BIND_ADDRESS, bindAddress)
+            .putExtra(LocalServerService.EXTRA_AUTH_TOKEN, authToken)
+        ContextCompat.startForegroundService(context, intent)
     }
 
     fun stop() {
-        server?.stop()
-        server = null
+        context.startService(
+            Intent(context, LocalServerService::class.java)
+                .setAction(LocalServerService.ACTION_STOP)
+        )
     }
 }
 
@@ -748,7 +737,7 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
     var selectedProject by remember { mutableStateOf(projects.firstOrNull()) }
     var menuExpanded by remember { mutableStateOf(false) }
     var portText by remember { mutableStateOf("8080") }
-    var running by remember { mutableStateOf(false) }
+    var running by remember { mutableStateOf(LocalServerService.isRunning) }
     var starting by remember { mutableStateOf(false) }
     var lanEnabled by remember { mutableStateOf(false) }
     var lanAddress by remember { mutableStateOf(findLanIpv4Address()) }
@@ -757,10 +746,61 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     fun addLog(value: String) {
-        mainHandler.post {
-            logs.add(0, value)
-            while (logs.size > 30) logs.removeAt(logs.lastIndex)
+        logs.add(0, value)
+        while (logs.size > 30) logs.removeAt(logs.lastIndex)
+    }
+
+    val receiver = remember(context) {
+        object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    LocalServerService.ACTION_LOG -> {
+                        addLog(intent.getStringExtra(LocalServerService.EXTRA_MESSAGE) ?: "Server log")
+                    }
+                    LocalServerService.ACTION_STATE -> {
+                        running = intent.getBooleanExtra(LocalServerService.EXTRA_RUNNING, false)
+                        starting = false
+                    }
+                }
+            }
         }
+    }
+    DisposableEffect(context, receiver) {
+        val filter = IntentFilter().apply {
+            addAction(LocalServerService.ACTION_LOG)
+            addAction(LocalServerService.ACTION_STATE)
+        }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+
+    fun startServer() {
+        val port = portText.toIntOrNull()
+        if (port == null || port !in 1024..65535) {
+            addLog("Choose a port between 1024 and 65535")
+            return
+        }
+        val bindAddress = if (lanEnabled) lanAddress else "127.0.0.1"
+        if (bindAddress == null) {
+            addLog("No private LAN IPv4 address found. Connect to Wi-Fi or start a hotspot.")
+            return
+        }
+        val token = if (lanEnabled) generateAccessToken() else null
+        accessToken = token.orEmpty()
+        starting = true
+        runCatching {
+            controller.start(selectedProject!!, port, bindAddress, token)
+        }.onFailure {
+            starting = false
+            accessToken = ""
+            addLog(it.message ?: "Could not start server")
+        }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startServer() else addLog("Notification permission is required to keep the server visible")
     }
 
     Column(
@@ -803,36 +843,12 @@ private fun ServerDashboardScreen(controller: LocalServerController) {
             Button(
                 enabled = !running && !starting && selectedProject != null,
                 onClick = {
-                    val port = portText.toIntOrNull()
-                    if (port == null || port !in 1024..65535) {
-                        addLog("Choose a port between 1024 and 65535")
+                    if (Build.VERSION.SDK_INT >= 33 &&
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     } else {
-                        val bindAddress = if (lanEnabled) lanAddress else "127.0.0.1"
-                        if (bindAddress == null) {
-                            addLog("No private LAN IPv4 address found. Connect to Wi-Fi or start a hotspot.")
-                        } else {
-                            starting = true
-                            val token = if (lanEnabled) generateAccessToken() else null
-                            accessToken = token.orEmpty()
-                            runCatching {
-                                controller.start(
-                                    selectedProject!!,
-                                    port,
-                                    bindAddress,
-                                    token,
-                                    ::addLog
-                                ) { isRunning ->
-                                    mainHandler.post {
-                                        running = isRunning
-                                        starting = false
-                                    }
-                                }
-                            }.onFailure {
-                                starting = false
-                                accessToken = ""
-                                addLog(it.message ?: "Could not start server")
-                            }
-                        }
+                        startServer()
                     }
                 }
             ) { Text(if (starting) "Starting…" else "Start") }
