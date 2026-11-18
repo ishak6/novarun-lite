@@ -822,30 +822,34 @@ private fun CodeEditorScreen(
 }
 
 private class CodeSyntaxOutputTransformation(private val extension: String) : OutputTransformation {
+    private val commentPattern = if (extension == "py") {
+        Regex("#[^\\n]*")
+    } else {
+        Regex("//[^\\n]*|/\\*[\\s\\S]*?\\*/")
+    }
+    private val stringPattern = Regex("\"[^\"]*\"|'[^']*'")
+    private val keywords = when (extension) {
+        "py" -> "def|class|return|if|elif|else|for|while|import|from|as|try|except|with|True|False|None|async|await"
+        "html" -> "html|head|body|div|span|script|style|title|meta|link|button|input"
+        "css" -> "important|media|keyframes|font-face"
+        else -> "const|let|var|function|return|if|else|class|new|import|export|from|async|await|true|false|null|undefined"
+    }
+    private val keywordPattern = Regex("\\b($keywords)\\b")
+    private val htmlTagPattern = Regex("</?[A-Za-z][^>]*>")
+
     override fun TextFieldBuffer.transformOutput() {
         val source = asCharSequence()
-        val commentPattern = if (extension == "py") {
-            Regex("#[^\\n]*")
-        } else {
-            Regex("//[^\\n]*|/\\*[\\s\\S]*?\\*/")
-        }
         commentPattern.findAll(source).forEach {
             addStyle(SpanStyle(color = Color(0xFF70A982)), it.range.first, it.range.last + 1)
         }
-        Regex("\"[^\"]*\"|'[^']*'").findAll(source).forEach {
+        stringPattern.findAll(source).forEach {
             addStyle(SpanStyle(color = Color(0xFFE3A66B)), it.range.first, it.range.last + 1)
         }
-        val keywords = when (extension) {
-            "py" -> "def|class|return|if|elif|else|for|while|import|from|as|try|except|with|True|False|None|async|await"
-            "html" -> "html|head|body|div|span|script|style|title|meta|link|button|input"
-            "css" -> "important|media|keyframes|font-face"
-            else -> "const|let|var|function|return|if|else|class|new|import|export|from|async|await|true|false|null|undefined"
-        }
-        Regex("\\b($keywords)\\b").findAll(source).forEach {
+        keywordPattern.findAll(source).forEach {
             addStyle(SpanStyle(color = Color(0xFF8E9FFF)), it.range.first, it.range.last + 1)
         }
         if (extension == "html" || extension == "htm") {
-            Regex("</?[A-Za-z][^>]*>").findAll(source).forEach {
+            htmlTagPattern.findAll(source).forEach {
                 addStyle(SpanStyle(color = Color(0xFF69B7D6)), it.range.first, it.range.last + 1)
             }
         }
