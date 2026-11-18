@@ -6,6 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.novarun.lite.database.ProjectDatabaseStore
 import com.novarun.lite.security.SecureTokenStore
+import com.novarun.lite.settings.AppSettingsStore
+import com.novarun.lite.settings.ThemeMode
 import com.novarun.lite.server.LocalServerService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -34,6 +36,30 @@ class RuntimeStorageInstrumentedTest {
         }
     }
 
+
+
+    @Test
+    fun appSettingsPersistThemePortAndEditorPreferences() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val settings = AppSettingsStore(context)
+        settings.setThemeMode(ThemeMode.DARK)
+        settings.setDefaultPort(9090)
+        settings.setAutoSaveEnabled(false)
+        settings.setAutoSaveDelayMs(1500)
+        settings.setLanAccessEnabled(true)
+
+        assertEquals(ThemeMode.DARK, settings.themeMode())
+        assertEquals(9090, settings.defaultPort())
+        assertEquals(false, settings.autoSaveEnabled())
+        assertEquals(1500L, settings.autoSaveDelayMs())
+        assertEquals(true, settings.lanAccessEnabled())
+
+        settings.setThemeMode(ThemeMode.SYSTEM)
+        settings.setDefaultPort(8080)
+        settings.setAutoSaveEnabled(true)
+        settings.setAutoSaveDelayMs(900)
+        settings.setLanAccessEnabled(false)
+    }
 
     @Test
     fun foregroundServiceStartsAndStopsLocalServer() {
