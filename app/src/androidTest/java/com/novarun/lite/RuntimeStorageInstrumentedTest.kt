@@ -6,6 +6,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.novarun.lite.database.ProjectDatabaseStore
+import com.novarun.lite.files.ProjectFileStore
 import com.novarun.lite.projects.ProjectStore
 import com.novarun.lite.security.SecureTokenStore
 import com.novarun.lite.settings.AppSettingsStore
@@ -148,6 +149,23 @@ class RuntimeStorageInstrumentedTest {
                     .setAction(LocalServerService.ACTION_STOP)
             )
             scenario.close()
+            root.deleteRecursively()
+        }
+    }
+
+
+    @Test
+    fun internalSqliteFileIsHiddenFromEditorAndPreview() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val root = File(context.cacheDir, "db-private-${UUID.randomUUID()}").apply { mkdirs() }
+        ProjectDatabaseStore(root).close()
+        val files = ProjectFileStore(root)
+        try {
+            assertFalse(files.list().any { it.name == ProjectDatabaseStore.DATABASE_NAME })
+            assertThrows(IllegalArgumentException::class.java) {
+                files.openInputStream(ProjectDatabaseStore.DATABASE_NAME)
+            }
+        } finally {
             root.deleteRecursively()
         }
     }
