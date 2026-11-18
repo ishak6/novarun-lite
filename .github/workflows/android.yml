@@ -47,13 +47,7 @@ jobs:
       - name: Sign QA APK with ephemeral debug key
         run: |
           test -f "$HOME/.android/debug.keystore"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \\
-            --ks "$HOME/.android/debug.keystore" \\
-            --ks-key-alias androiddebugkey \\
-            --ks-pass pass:android \\
-            --key-pass pass:android \\
-            --out app/build/outputs/apk/release/app-release-qa.apk \\
-            app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$HOME/.android/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out app/build/outputs/apk/release/app-release-qa.apk app/build/outputs/apk/release/app-release-unsigned.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify app/build/outputs/apk/release/app-release-qa.apk
       - name: Upload debug APK
         uses: actions/upload-artifact@v5
