@@ -46,6 +46,8 @@ jobs:
         run: gradle :app:assembleDebug
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest
+      - name: Android Lint
+        run: gradle :app:lintRelease
       - name: Run Android instrumentation tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
